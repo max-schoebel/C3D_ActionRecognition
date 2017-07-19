@@ -122,6 +122,6 @@ if __name__ == '__main__':
     batch, labels = get_test_set()
     duration = time.time() - before
     print("Creating Test set took:", duration)
-    for i in range(50):
-        play_clip(batch[i])
-    cv2.destroyAllWindows()
+    # for i in range(50):
+    #     play_clip(batch[i])
+    # cv2.destroyAllWindows()
