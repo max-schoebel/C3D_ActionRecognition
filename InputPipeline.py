@@ -93,8 +93,18 @@ def get_next_batch(batch_size):
         return batch, labels, False
     else:
         batch_called = 0
+        # pad last returned batch with crops from random videos
+        for i in range(batch_size):
+            if start + i < len(train_file_tuples):
+                video_index = start + i
+            else:
+                video_index = np.random.randint(len(train_file_tuples))
+            foldername, filename = train_file_tuples[video_index]
+            complete_path = './UCF-101/{}/{}'.format(foldername, filename)
+            batch[i, :, :, :, :] = create_crops_from_video(complete_path, 1)
+            labels[i, :] = one_hot(class_list.index(foldername))
         random.shuffle(train_file_tuples)
-        return None, None, True
+        return batch, labels, True
     
     
 test_file_tuples = get_folder_filename_tuples(TESTPATH1)
@@ -118,10 +128,19 @@ def play_clip(clip):
     
     
 if __name__ == '__main__':
-    before = time.time()
-    batch, labels = get_test_set()
-    duration = time.time() - before
-    print("Creating Test set took:", duration)
+    print(batch_called)
+    b, l, ended = get_next_batch(10)
+    print(batch_called)
+    b, l, ended = get_next_batch(10)
+    print(batch_called)
+    b, l, ended = get_next_batch(10)
+    print(batch_called)
+    b, l, ended = get_next_batch(10)
+    print(batch_called)
+    # before = time.time()
+    # batch, labels = get_test_set()
+    # duration = time.time() - before
+    # print("Creating Test set took:", duration)
     # for i in range(50):
     #     play_clip(batch[i])
     # cv2.destroyAllWindows()

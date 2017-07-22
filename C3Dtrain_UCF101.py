@@ -8,6 +8,7 @@ from datetime import datetime
 
 now = datetime.utcnow().strftime("%Y%m%d%H%M%S")
 root_logdir = "tf_logs"
+root_ckptdir = "tf_checkpoints"
 logdir = "{}/run-{}/".format(root_logdir, now)
 
 TEMPORAL_DEPTH = ip.TEMPORAL_DEPTH
@@ -16,7 +17,7 @@ INPUT_HEIGHT = ip.INPUT_HEIGHT
 INPUT_CHANNELS = ip.INPUT_CHANNELS
 NUM_CLASSES = ip.NUM_CLASSES
 
-BATCH_SIZE = 5
+BATCH_SIZE = 20
 
 def model_variable(name, shape, wd):
     with tf.device('/cpu:0'):
@@ -66,6 +67,7 @@ with my_graph.as_default():
     
     merged_summaries = tf.summary.merge_all()
     writer = tf.summary.FileWriter(logdir, tf.get_default_graph())
+    saver = tf.train.Saver()
     
 
 # with tf.Session(graph=my_graph, config=tf.ConfigProto(log_device_placement=True)) as sess:
@@ -95,6 +97,9 @@ with tf.Session(graph=my_graph) as sess:
             print("   Current step is:    {}".format(step))
             print("   Single update-step with {} examples took: {}".format(BATCH_SIZE, duration))
             print("   Resulting training loss: {}".format(loss))
+            print("   {}".format(ip.batch_called))
+        print("------- EPOCH ENDED!!!!! -----------")
+        saver.save(sess, "tf_checkpoints/model-{}.ckpt".format(epoch))
     
     # before = time.time()
     # output = sess.run(network_output, feed_dict=train_dict)
