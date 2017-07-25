@@ -3,6 +3,7 @@ import C3Dmodel
 import InputPipeline as ip
 import time
 import numpy as np
+import os
 
 from datetime import datetime
 
@@ -10,6 +11,12 @@ now = datetime.utcnow().strftime("%Y%m%d%H%M%S")
 root_logdir = "tf_logs"
 root_ckptdir = "tf_checkpoints"
 logdir = "{}/run-{}/".format(root_logdir, now)
+ckptdir = "{}/run-{}/".format(root_ckptdir, now)
+
+if not os.path.exists(logdir):
+    os.makedirs(logdir)
+if not os.path.exists(ckptdir):
+    os.makedirs(ckptdir)
 
 TEMPORAL_DEPTH = ip.TEMPORAL_DEPTH
 INPUT_WIDTH = ip.INPUT_WIDTH
@@ -17,7 +24,7 @@ INPUT_HEIGHT = ip.INPUT_HEIGHT
 INPUT_CHANNELS = ip.INPUT_CHANNELS
 NUM_CLASSES = ip.NUM_CLASSES
 
-BATCH_SIZE = 20
+BATCH_SIZE = 1
 
 def model_variable(name, shape, wd):
     with tf.device('/cpu:0'):
@@ -57,13 +64,17 @@ with my_graph.as_default():
     }
 
     input_placeholder = tf.placeholder(tf.float32, [BATCH_SIZE, TEMPORAL_DEPTH, INPUT_HEIGHT, INPUT_WIDTH, INPUT_CHANNELS])
-    out_placeholder = tf.placeholder(tf.float32, [BATCH_SIZE, NUM_CLASSES])
+    output_placeholder = tf.placeholder(tf.float32, [BATCH_SIZE, NUM_CLASSES])
     dropout_placeholder = tf.placeholder(tf.float32)
+    tf.add_to_collection("placeholders", input_placeholder)
+    tf.add_to_collection("placeholders", output_placeholder)
+    tf.add_to_collection("placeholders", dropout_placeholder)
     global_step = tf.Variable(0, name='global_step', trainable=False)
     
-    network_output = C3Dmodel.inference(input_placeholder, BATCH_SIZE, weights, biases, dropout_placeholder)
-    xentropy_loss = C3Dmodel.loss(network_output, out_placeholder)
-    train_step = C3Dmodel.train(xentropy_loss, 1e-04, global_step)
+    network_output = C3Dmodel.inference(input_placeholder, BATCH_SIZE, weights, biases, dropout_placeholder, collection='network_output')
+    xentropy_loss = C3Dmodel.loss(network_output, output_placeholder, collection='xentropy_loss')
+    train_step = C3Dmodel.train(xentropy_loss, 1e-04, global_step, collection='train_step')
+    accuracy_op, accuracy_summary_op = C3Dmodel.accuracy(network_output, output_placeholder, collection='accuracy_op')
     
     merged_summaries = tf.summary.merge_all()
     writer = tf.summary.FileWriter(logdir, tf.get_default_graph())
@@ -73,11 +84,21 @@ with my_graph.as_default():
 # with tf.Session(graph=my_graph, config=tf.ConfigProto(log_device_placement=True)) as sess:
 with tf.Session(graph=my_graph) as sess:
     sess.run(tf.global_variables_initializer())
-    EPOCHS = 10
+    
+    EPOCHS = 1000
+    # testvideos = np.load('testset.npy')
+    # testlabels = np.load('testlabels.npy')
+    # test_dict = {
+    #     input_placeholder: testvideos,
+    #     output_placeholder: testlabels,
+    #     dropout_placeholder: 1.0
+    # }
+    
     print('------------------------------------------------------------------------------')
-    print(np.sum([np.prod(v.shape) for v in tf.trainable_variables()]))
-    print(tf.__version__)
+    print('Trainable parameters:', np.sum([np.prod(v.shape) for v in tf.trainable_variables()]))
+    print('Tensorflow version:', tf.__version__)
     print('------------------------------------------------------------------------------')
+    
     for epoch in range(EPOCHS):
         epoch_ended = False
         while not epoch_ended:
@@ -87,7 +108,7 @@ with tf.Session(graph=my_graph) as sess:
             print("Getting examples took {}s".format(duration))
             train_dict = {
                 input_placeholder: batch,
-                out_placeholder: labels,
+                output_placeholder: labels,
                 dropout_placeholder: 0.5  # == keep probability
             }
             before = time.time()
@@ -97,9 +118,14 @@ with tf.Session(graph=my_graph) as sess:
             print("   Current step is:    {}".format(step))
             print("   Single update-step with {} examples took: {}".format(BATCH_SIZE, duration))
             print("   Resulting training loss: {}".format(loss))
-            print("   {}".format(ip.batch_called))
+            
+            epoch_ended = True
+            
         print("------- EPOCH ENDED!!!!! -----------")
-        saver.save(sess, "tf_checkpoints/model-{}.ckpt".format(epoch))
+        # accuracy, accuracy_summary, step = sess.run([accuracy_op, accuracy_summary_op, global_step], feed_dict=test_dict)
+        # writer.add_summary(accuracy_summary, step)
+        saver.save(sess, ckptdir + "/model-{}.ckpt".format(epoch))
+        
     
     # before = time.time()
     # output = sess.run(network_output, feed_dict=train_dict)

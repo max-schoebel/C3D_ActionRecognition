@@ -8,7 +8,7 @@ def add_activation_summary(layer):
     tf.summary.histogram(tensor_name + "/activations", layer)
 
 
-def inference(vid_placeholder, batch_size, weight_dict, bias_dict, dropout_rate):
+def inference(vid_placeholder, batch_size, weight_dict, bias_dict, dropout_rate, collection):
     # dropout_rate = 1 - keep_rate !!!
     
     def conv3d(x, w, b, names):
@@ -20,7 +20,7 @@ def inference(vid_placeholder, batch_size, weight_dict, bias_dict, dropout_rate)
         assert(len(names) == 2)
         conv = tf.nn.conv3d(x, w, strides=[1, 1, 1, 1, 1], padding='SAME', name=names[0])
         conv_out = tf.nn.bias_add(conv, b)
-        return tf.nn.relu(conv_out, name=names[1])
+        return tf.nn.elu(conv_out, name=names[1])
     
     def max_pool(input, temp_k, name):
         # temp_k denotes kernel size and stride in temporal direction
@@ -71,28 +71,39 @@ def inference(vid_placeholder, batch_size, weight_dict, bias_dict, dropout_rate)
 
     with tf.name_scope('fully1'):
         fully1 = tf.matmul(pool5_flat, weight_dict['wfully1']) + bias_dict['bfully1']
-        fully1 = tf.nn.relu(fully1, name='relu_fully1')
+        fully1 = tf.nn.elu(fully1, name='relu_fully1')
         add_activation_summary(fully1)
         fully1 = tf.nn.dropout(fully1, dropout_rate)
     
     with tf.name_scope('fully2'):
         fully2 = tf.matmul(fully1, weight_dict['wfully2']) + bias_dict['bfully2']
-        fully2 = tf.nn.relu(fully2, name='relu_fully2')
+        fully2 = tf.nn.elu(fully2, name='relu_fully2')
         add_activation_summary(fully1)
         fully2 = tf.nn.dropout(fully2, dropout_rate)
         
     with tf.name_scope('out'):
         out = tf.matmul(fully2, weight_dict['wout']) + bias_dict['bout']
         add_activation_summary(out)
+    tf.add_to_collection(collection, out)
     return out
     
     
-def loss(network_output, true_labels):
+def loss(network_output, true_labels, collection):
     loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=true_labels, logits=network_output, name='xentropy'))
     tf.summary.scalar(loss.op.name + '/loss', loss)
+    tf.add_to_collection(collection, loss)
     return loss
 
 
-def train(loss, learning_rate, global_step):
+def train(loss, learning_rate, global_step, collection):
     train_step = tf.train.AdamOptimizer(learning_rate).minimize(loss, global_step=global_step)
+    tf.add_to_collection(collection, train_step)
     return train_step
+
+def accuracy(net_output, onehot_labels, collection):
+    correctly_classified = tf.equal(tf.argmax(net_output, 1), tf.argmax(onehot_labels, 1))
+    accuracy = tf.reduce_mean(tf.cast(correctly_classified, tf.float32))
+    accuracy_summary = tf.summary.scalar(accuracy.op.name + '/accuracy', accuracy)
+    tf.add_to_collection(collection, accuracy)
+    tf.add_to_collection(collection, accuracy_summary)
+    return accuracy, accuracy_summary

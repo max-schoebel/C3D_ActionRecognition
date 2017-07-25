@@ -128,15 +128,8 @@ def play_clip(clip):
     
     
 if __name__ == '__main__':
-    print(batch_called)
-    b, l, ended = get_next_batch(10)
-    print(batch_called)
-    b, l, ended = get_next_batch(10)
-    print(batch_called)
-    b, l, ended = get_next_batch(10)
-    print(batch_called)
-    b, l, ended = get_next_batch(10)
-    print(batch_called)
+    testset, labels = get_test_set()
+    
     # before = time.time()
     # batch, labels = get_test_set()
     # duration = time.time() - before
