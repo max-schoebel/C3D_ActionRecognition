@@ -25,111 +25,130 @@ INPUT_CHANNELS = ip.INPUT_CHANNELS
 NUM_CLASSES = ip.NUM_CLASSES
 
 BATCH_SIZE = 1
+NUM_GPUS = 2
 
-def model_variable(name, shape, wd):
-    with tf.device('/cpu:0'):
-        var = tf.get_variable(name, shape, dtype=tf.float32, initializer=tf.truncated_normal_initializer(0,0.1))
-    return var
+def average_gradients(tower_grads):
+    """Calculate the average gradient for each shared variable across all towers.
+  
+    Note that this function provides a synchronization point across all towers.
+  
+    Args:
+      tower_grads: List of lists of (gradient, variable) tuples. The outer list
+        is over individual gradients. The inner list is over the gradient
+        calculation for each tower.
+    Returns:
+       List of pairs of (gradient, variable) where the gradient has been averaged
+       across all towers.
+    """
+    average_grads = []
+    for grad_and_vars in zip(*tower_grads):
+        # Note that each grad_and_vars looks like the following:
+        #   ((grad0_gpu0, var0_gpu0), ... , (grad0_gpuN, var0_gpuN))
+        grads = []
+        for g, _ in grad_and_vars:
+            # Add 0 dimension to the gradients to represent the tower.
+            expanded_g = tf.expand_dims(g, 0)
+            
+            # Append on a 'tower' dimension which we will average over below.
+            grads.append(expanded_g)
+        
+        # Average over the 'tower' dimension.
+        grad = tf.concat(axis=0, values=grads)
+        grad = tf.reduce_mean(grad, 0)
+        
+        # Keep in mind that the Variables are redundant because they are shared
+        # across towers. So .. we will just return the first tower's pointer to
+        # the Variable.
+        v = grad_and_vars[0][1]
+        grad_and_var = (grad, v)
+        average_grads.append(grad_and_var)
+    return average_grads
 
 # with tf.Graph().as_default():
 my_graph = tf.Graph()
-with my_graph.as_default():
-    # When training on multiple GPUs, variable scope is needed to maintain a single copy of these variables
-    weights = {
-        'wconv1': model_variable('wconv1', [3, 3, 3, 3, 64], 0.0005),
-        'wconv2': model_variable('wconv2', [3, 3, 3, 64, 128], 0.0005),
-        'wconv3a': model_variable('wconv3a', [3, 3, 3, 128, 256], 0.0005),
-        'wconv3b': model_variable('wconv3b', [3, 3, 3, 256, 256], 0.0005),
-        'wconv4a': model_variable('wconv4a', [3, 3, 3, 256, 512], 0.0005),
-        'wconv4b': model_variable('wconv4b', [3, 3, 3, 512, 512], 0.0005),
-        'wconv5a': model_variable('wconv5a', [3, 3, 3, 512, 512], 0.0005),
-        'wconv5b': model_variable('wconv5b', [3, 3, 3, 512, 512], 0.0005),
-        'wfully1': model_variable('wfully1', [8192, 4096], 0.0005),
-        'wfully2': model_variable('wfully2', [4096, 4096], 0.0005),
-        'wout': model_variable('wout', [4096, NUM_CLASSES], 0.0005)
-    }
-
-    biases = {
-        'bconv1': model_variable('bconv1', [64], 0.000),
-        'bconv2': model_variable('bconv2', [128], 0.000),
-        'bconv3a': model_variable('bconv3a', [256], 0.000),
-        'bconv3b': model_variable('bconv3b', [256], 0.000),
-        'bconv4a': model_variable('bconv4a', [512], 0.000),
-        'bconv4b': model_variable('bconv4b', [512], 0.000),
-        'bconv5a': model_variable('bconv5a', [512], 0.000),
-        'bconv5b': model_variable('bconv5b', [512], 0.000),
-        'bfully1': model_variable('bfully1', [4096], 0.000),
-        'bfully2': model_variable('bfully2', [4096], 0.000),
-        'bout': model_variable('bout', [NUM_CLASSES], 0.000),
-    }
-
-    input_placeholder = tf.placeholder(tf.float32, [BATCH_SIZE, TEMPORAL_DEPTH, INPUT_HEIGHT, INPUT_WIDTH, INPUT_CHANNELS])
-    output_placeholder = tf.placeholder(tf.float32, [BATCH_SIZE, NUM_CLASSES])
-    dropout_placeholder = tf.placeholder(tf.float32)
-    tf.add_to_collection("placeholders", input_placeholder)
-    tf.add_to_collection("placeholders", output_placeholder)
-    tf.add_to_collection("placeholders", dropout_placeholder)
+with my_graph.as_default(), tf.device('/cpu:0'):
+    
     global_step = tf.Variable(0, name='global_step', trainable=False)
     
-    network_output = C3Dmodel.inference(input_placeholder, BATCH_SIZE, weights, biases, dropout_placeholder, collection='network_output')
-    xentropy_loss = C3Dmodel.loss(network_output, output_placeholder, collection='xentropy_loss')
-    train_step = C3Dmodel.train(xentropy_loss, 1e-04, global_step, collection='train_step')
-    accuracy_op, accuracy_summary_op = C3Dmodel.accuracy(network_output, output_placeholder, collection='accuracy_op')
+    optimizer = tf.train.Adam(1e-04)
+    tower_gradients = []
+    with tf.variable_scope(tf.get_variable_scope()):
+        for i in range(NUM_GPUS):
+            with tf.device('/gpu:%d'%i), tf.name_scope('Tower%d'%i) as scope:
+            
+                input_placeholder = tf.placeholder(tf.float32, [BATCH_SIZE, TEMPORAL_DEPTH, INPUT_HEIGHT, INPUT_WIDTH, INPUT_CHANNELS])
+                output_placeholder = tf.placeholder(tf.float32, [BATCH_SIZE, NUM_CLASSES])
+                dropout_placeholder = tf.placeholder(tf.float32)
+                tf.add_to_collection("placeholders", input_placeholder)
+                tf.add_to_collection("placeholders", output_placeholder)
+                tf.add_to_collection("placeholders", dropout_placeholder)
+                
+                network_output = C3Dmodel.inference(input_placeholder, BATCH_SIZE, dropout_placeholder, NUM_CLASSES, collection='network_output')
+                xentropy_loss = C3Dmodel.loss(network_output, output_placeholder, collection='xentropy_loss')
+                
+                # train_step = C3Dmodel.train(xentropy_loss, 1e-04, global_step, collection='train_step')
+                grads = optimizer.compute_gradients(xentropy_loss)
+                tower_gradients.append(grads)
+                accuracy_op, accuracy_summary_op = C3Dmodel.accuracy(network_output, output_placeholder, collection='accuracy_op')
+                
+                tf.get_variable_scope().reuse_variables()
+    
+    grads =
     
     merged_summaries = tf.summary.merge_all()
     writer = tf.summary.FileWriter(logdir, tf.get_default_graph())
     saver = tf.train.Saver()
     
-
-# with tf.Session(graph=my_graph, config=tf.ConfigProto(log_device_placement=True)) as sess:
-with tf.Session(graph=my_graph) as sess:
-    sess.run(tf.global_variables_initializer())
-    
-    EPOCHS = 1000
-    # testvideos = np.load('testset.npy')
-    # testlabels = np.load('testlabels.npy')
-    # test_dict = {
-    #     input_placeholder: testvideos,
-    #     output_placeholder: testlabels,
-    #     dropout_placeholder: 1.0
-    # }
-    
-    print('------------------------------------------------------------------------------')
-    print('Trainable parameters:', np.sum([np.prod(v.shape) for v in tf.trainable_variables()]))
-    print('Tensorflow version:', tf.__version__)
-    print('------------------------------------------------------------------------------')
-    
-    for epoch in range(EPOCHS):
-        epoch_ended = False
-        while not epoch_ended:
-            before = time.time()
-            batch, labels, epoch_ended = ip.get_next_batch(BATCH_SIZE)
-            duration = time.time() - before
-            print("Getting examples took {}s".format(duration))
-            train_dict = {
-                input_placeholder: batch,
-                output_placeholder: labels,
-                dropout_placeholder: 0.5  # == keep probability
-            }
-            before = time.time()
-            _, loss, merged_summ, step = sess.run([train_step, xentropy_loss, merged_summaries, global_step], feed_dict=train_dict)
-            duration = time.time() - before
-            writer.add_summary(merged_summ, step)
-            print("   Current step is:    {}".format(step))
-            print("   Single update-step with {} examples took: {}".format(BATCH_SIZE, duration))
-            print("   Resulting training loss: {}".format(loss))
-            
-            epoch_ended = True
-            
-        print("------- EPOCH ENDED!!!!! -----------")
-        # accuracy, accuracy_summary, step = sess.run([accuracy_op, accuracy_summary_op, global_step], feed_dict=test_dict)
-        # writer.add_summary(accuracy_summary, step)
-        saver.save(sess, ckptdir + "/model-{}.ckpt".format(epoch))
+def run_training():
+    # with tf.Session(graph=my_graph, config=tf.ConfigProto(log_device_placement=True)) as sess:
+    with tf.Session(graph=my_graph) as sess:
+        sess.run(tf.global_variables_initializer())
         
-    
-    # before = time.time()
-    # output = sess.run(network_output, feed_dict=train_dict)
-    # print("Forward pass took:{}".format(time.time() - before))
+        EPOCHS = 1000
+        # testvideos = np.load('testset.npy')
+        # testlabels = np.load('testlabels.npy')
+        # test_dict = {
+        #     input_placeholder: testvideos,
+        #     output_placeholder: testlabels,
+        #     dropout_placeholder: 1.0
+        # }
+        
+        print('------------------------------------------------------------------------------')
+        print('Trainable parameters:', np.sum([np.prod(v.shape) for v in tf.trainable_variables()]))
+        print('Tensorflow version:', tf.__version__)
+        print('------------------------------------------------------------------------------')
+        
+        for epoch in range(EPOCHS):
+            epoch_ended = False
+            while not epoch_ended:
+                before = time.time()
+                batch, labels, epoch_ended = ip.get_next_batch(BATCH_SIZE)
+                duration = time.time() - before
+                print("Getting examples took {}s".format(duration))
+                train_dict = {
+                    input_placeholder: batch,
+                    output_placeholder: labels,
+                    dropout_placeholder: 0.5  # == keep probability
+                }
+                before = time.time()
+                _, loss, merged_summ, step = sess.run([train_step, xentropy_loss, merged_summaries, global_step], feed_dict=train_dict)
+                duration = time.time() - before
+                writer.add_summary(merged_summ, step)
+                print("   Current step is:    {}".format(step))
+                print("   Single update-step with {} examples took: {}".format(BATCH_SIZE, duration))
+                print("   Resulting training loss: {}".format(loss))
+                
+                epoch_ended = True
+                
+            print("------- EPOCH ENDED!!!!! -----------")
+            # accuracy, accuracy_summary, step = sess.run([accuracy_op, accuracy_summary_op, global_step], feed_dict=test_dict)
+            # writer.add_summary(accuracy_summary, step)
+            # saver.save(sess, ckptdir + "/model-{}.ckpt".format(epoch))
+            
+        
+        # before = time.time()
+        # output = sess.run(network_output, feed_dict=train_dict)
+        # print("Forward pass took:{}".format(time.time() - before))
 
 # if __name__ == '__main__':
 #     pass
