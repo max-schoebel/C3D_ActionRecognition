@@ -24,8 +24,21 @@ INPUT_HEIGHT = ip.INPUT_HEIGHT
 INPUT_CHANNELS = ip.INPUT_CHANNELS
 NUM_CLASSES = ip.NUM_CLASSES
 
-BATCH_SIZE = 1
-NUM_GPUS = 2
+BATCH_SIZE = 5
+NUM_GPUS = 1
+
+
+def create_train_dict(batch, labels, dropout_rate):
+    train_dict = {}
+    gr = tf.get_default_graph()
+    for tower_index in range(NUM_GPUS):
+        start = tower_index * BATCH_SIZE
+        end = start + BATCH_SIZE
+        train_dict[gr.get_tensor_by_name('Tower%d/input_placeholder:0'%tower_index)] = batch[start:end]
+        train_dict[gr.get_tensor_by_name('Tower%d/output_placeholder:0'%tower_index)] = labels[start:end]
+        train_dict[gr.get_tensor_by_name('Tower%d/dropout_placeholder:0'%tower_index)] = dropout_rate
+    return train_dict
+
 
 def average_gradients(tower_grads):
     """Calculate the average gradient for each shared variable across all towers.
@@ -70,15 +83,20 @@ with my_graph.as_default(), tf.device('/cpu:0'):
     
     global_step = tf.Variable(0, name='global_step', trainable=False)
     
-    optimizer = tf.train.Adam(1e-04)
+    optimizer = tf.train.AdamOptimizer(1e-04)
     tower_gradients = []
     with tf.variable_scope(tf.get_variable_scope()):
         for i in range(NUM_GPUS):
             with tf.device('/gpu:%d'%i), tf.name_scope('Tower%d'%i) as scope:
             
-                input_placeholder = tf.placeholder(tf.float32, [BATCH_SIZE, TEMPORAL_DEPTH, INPUT_HEIGHT, INPUT_WIDTH, INPUT_CHANNELS])
-                output_placeholder = tf.placeholder(tf.float32, [BATCH_SIZE, NUM_CLASSES])
-                dropout_placeholder = tf.placeholder(tf.float32)
+                input_placeholder = tf.placeholder(tf.float32, [BATCH_SIZE,
+                                                                TEMPORAL_DEPTH,
+                                                                INPUT_HEIGHT,
+                                                                INPUT_WIDTH,
+                                                                INPUT_CHANNELS],
+                                                   name='input_placeholder')
+                output_placeholder = tf.placeholder(tf.float32, [BATCH_SIZE, NUM_CLASSES], name='output_placeholder')
+                dropout_placeholder = tf.placeholder(tf.float32, name='dropout_placeholder')
                 tf.add_to_collection("placeholders", input_placeholder)
                 tf.add_to_collection("placeholders", output_placeholder)
                 tf.add_to_collection("placeholders", dropout_placeholder)
@@ -93,7 +111,8 @@ with my_graph.as_default(), tf.device('/cpu:0'):
                 
                 tf.get_variable_scope().reuse_variables()
     
-    grads =
+    grads = average_gradients(tower_gradients)
+    train_step = optimizer.apply_gradients(grads, global_step=global_step)
     
     merged_summaries = tf.summary.merge_all()
     writer = tf.summary.FileWriter(logdir, tf.get_default_graph())
@@ -101,7 +120,7 @@ with my_graph.as_default(), tf.device('/cpu:0'):
     
 def run_training():
     # with tf.Session(graph=my_graph, config=tf.ConfigProto(log_device_placement=True)) as sess:
-    with tf.Session(graph=my_graph) as sess:
+    with tf.Session(graph=my_graph, config=tf.ConfigProto(allow_soft_placement=True)) as sess:
         sess.run(tf.global_variables_initializer())
         
         EPOCHS = 1000
@@ -113,6 +132,8 @@ def run_training():
         #     dropout_placeholder: 1.0
         # }
         
+        assert(tf.get_default_graph() == my_graph)
+        
         print('------------------------------------------------------------------------------')
         print('Trainable parameters:', np.sum([np.prod(v.shape) for v in tf.trainable_variables()]))
         print('Tensorflow version:', tf.__version__)
@@ -120,27 +141,30 @@ def run_training():
         
         for epoch in range(EPOCHS):
             epoch_ended = False
+            if os.path.isfile('./terminate'):
+                break
             while not epoch_ended:
                 before = time.time()
-                batch, labels, epoch_ended = ip.get_next_batch(BATCH_SIZE)
+                batch, labels, epoch_ended = ip.get_next_batch(BATCH_SIZE * NUM_GPUS)
                 duration = time.time() - before
                 print("Getting examples took {}s".format(duration))
-                train_dict = {
-                    input_placeholder: batch,
-                    output_placeholder: labels,
-                    dropout_placeholder: 0.5  # == keep probability
-                }
+                
+                # train_dict = {
+                #     input_placeholder: batch,
+                #     output_placeholder: labels,
+                #     dropout_placeholder: 0.5  # == keep probability
+                # }
+                train_dict = create_train_dict(batch, labels, 0.5)
+                
                 before = time.time()
                 _, loss, merged_summ, step = sess.run([train_step, xentropy_loss, merged_summaries, global_step], feed_dict=train_dict)
                 duration = time.time() - before
                 writer.add_summary(merged_summ, step)
                 print("   Current step is:    {}".format(step))
-                print("   Single update-step with {} examples took: {}".format(BATCH_SIZE, duration))
+                print("   Single update-step with {} examples took: {}".format(BATCH_SIZE * NUM_GPUS, duration))
                 print("   Resulting training loss: {}".format(loss))
                 
-                epoch_ended = True
-                
-            print("------- EPOCH ENDED!!!!! -----------")
+            print("------- EPOCH ENDED !!!!! -----------")
             # accuracy, accuracy_summary, step = sess.run([accuracy_op, accuracy_summary_op, global_step], feed_dict=test_dict)
             # writer.add_summary(accuracy_summary, step)
             # saver.save(sess, ckptdir + "/model-{}.ckpt".format(epoch))
@@ -150,5 +174,6 @@ def run_training():
         # output = sess.run(network_output, feed_dict=train_dict)
         # print("Forward pass took:{}".format(time.time() - before))
 
-# if __name__ == '__main__':
-#     pass
+if __name__ == '__main__':
+    run_training()
+    pass

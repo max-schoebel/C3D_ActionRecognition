@@ -5,8 +5,8 @@ def add_activation_summary(layer):
     # changes needed for multi cpu training!
     # i.e. remove "tower[0-9]*" from it!
     tensor_name = layer.op.name
-    tf.summary.scalar(tensor_name + "/sparsity", tf.nn.zero_fraction(layer))
-    tf.summary.histogram(tensor_name + "/activations", layer)
+    tf.summary.scalar("sparsity", tf.nn.zero_fraction(layer))
+    tf.summary.histogram("activations", layer)
     
     
 def model_variable(name, shape, wd):
@@ -130,7 +130,7 @@ def inference(vid_placeholder, batch_size, dropout_rate, num_classes, collection
     
 def loss(network_output, true_labels, collection):
     loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=true_labels, logits=network_output, name='xentropy'))
-    tf.summary.scalar(loss.op.name + '/loss', loss)
+    tf.summary.scalar('loss', loss)
     tf.add_to_collection(collection, loss)
     return loss
 
@@ -144,7 +144,7 @@ def train(loss, learning_rate, global_step, collection):
 def accuracy(net_output, onehot_labels, collection):
     correctly_classified = tf.equal(tf.argmax(net_output, 1), tf.argmax(onehot_labels, 1))
     accuracy = tf.reduce_mean(tf.cast(correctly_classified, tf.float32))
-    accuracy_summary = tf.summary.scalar(accuracy.op.name + '/accuracy', accuracy)
+    accuracy_summary = tf.summary.scalar('accuracy', accuracy)
     tf.add_to_collection(collection, accuracy)
     tf.add_to_collection(collection, accuracy_summary)
     return accuracy, accuracy_summary
