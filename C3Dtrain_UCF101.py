@@ -24,7 +24,7 @@ INPUT_HEIGHT = ip.INPUT_HEIGHT
 INPUT_CHANNELS = ip.INPUT_CHANNELS
 NUM_CLASSES = ip.NUM_CLASSES
 
-BATCH_SIZE = 5
+BATCH_SIZE = 20
 NUM_GPUS = 1
 
 
@@ -82,13 +82,14 @@ my_graph = tf.Graph()
 with my_graph.as_default(), tf.device('/cpu:0'):
     
     global_step = tf.Variable(0, name='global_step', trainable=False)
-    
     optimizer = tf.train.AdamOptimizer(1e-04)
+    
     tower_gradients = []
     with tf.variable_scope(tf.get_variable_scope()):
         for i in range(NUM_GPUS):
             with tf.device('/gpu:%d'%i), tf.name_scope('Tower%d'%i) as scope:
-            
+                
+                # create placeholder for individual tower
                 input_placeholder = tf.placeholder(tf.float32, [BATCH_SIZE,
                                                                 TEMPORAL_DEPTH,
                                                                 INPUT_HEIGHT,
@@ -100,6 +101,7 @@ with my_graph.as_default(), tf.device('/cpu:0'):
                 tf.add_to_collection("placeholders", input_placeholder)
                 tf.add_to_collection("placeholders", output_placeholder)
                 tf.add_to_collection("placeholders", dropout_placeholder)
+                # end of input creation.
                 
                 network_output = C3Dmodel.inference(input_placeholder, BATCH_SIZE, dropout_placeholder, NUM_CLASSES, collection='network_output')
                 xentropy_loss = C3Dmodel.loss(network_output, output_placeholder, collection='xentropy_loss')

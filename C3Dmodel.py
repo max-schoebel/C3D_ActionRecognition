@@ -79,28 +79,28 @@ def inference(vid_placeholder, batch_size, dropout_rate, num_classes, collection
     
     with tf.variable_scope('convlayer2') as scope:
         conv2 = conv3d(pool1, weight_dict['wconv2'](scope), bias_dict['bconv2'](scope), ('conv2', 'relu2'))
-        add_activation_summary(conv2)
+        # add_activation_summary(conv2)
         pool2 = max_pool(conv2, 2, 'pool2')
         
     with tf.variable_scope('convlayer3') as scope:
         conv3 = conv3d(pool2, weight_dict['wconv3a'](scope), bias_dict['bconv3a'](scope), ('conv3a', 'relu3a'))
-        add_activation_summary(conv3)
+        # add_activation_summary(conv3)
         conv3 = conv3d(conv3, weight_dict['wconv3b'](scope), bias_dict['bconv3b'](scope), ('conv3b', 'relu3b'))
-        add_activation_summary(conv3)
+        # add_activation_summary(conv3)
         pool3 = max_pool(conv3, 2, 'pool3')
         
     with tf.variable_scope('convlayer4') as scope:
         conv4 = conv3d(pool3, weight_dict['wconv4a'](scope), bias_dict['bconv4a'](scope), ('conv4a', 'relu4a'))
-        add_activation_summary(conv4)
+        # add_activation_summary(conv4)
         conv4 = conv3d(conv4, weight_dict['wconv4b'](scope), bias_dict['bconv4b'](scope), ('conv4b', 'relu4b'))
-        add_activation_summary(conv4)
+        # add_activation_summary(conv4)
         pool4 = max_pool(conv4, 2, 'pool4')
     
     with tf.variable_scope('convlayer5') as scope:
         conv5 = conv3d(pool4, weight_dict['wconv5a'](scope), bias_dict['bconv5a'](scope), ('conv5a', 'relu5a'))
-        add_activation_summary(conv5)
+        # add_activation_summary(conv5)
         conv5 = conv3d(conv5, weight_dict['wconv5b'](scope), bias_dict['bconv5b'](scope), ('conv5b', 'relu5b'))
-        add_activation_summary(conv5)
+        # add_activation_summary(conv5)
         pool5 = max_pool(conv5, 2, 'pool5')
         
     with tf.variable_scope('fully1') as scope:
@@ -112,13 +112,13 @@ def inference(vid_placeholder, batch_size, dropout_rate, num_classes, collection
     with tf.variable_scope(scope):
         fully1 = tf.matmul(pool5_flat, fully1_weights) + bias_dict['bfully1'](scope)
         fully1 = tf.nn.elu(fully1, name='relu_fully1')
-        add_activation_summary(fully1)
+        # add_activation_summary(fully1)
         fully1 = tf.nn.dropout(fully1, dropout_rate)
     
     with tf.variable_scope('fully2') as scope:
         fully2 = tf.matmul(fully1, weight_dict['wfully2'](scope)) + bias_dict['bfully2'](scope)
         fully2 = tf.nn.elu(fully2, name='relu_fully2')
-        add_activation_summary(fully1)
+        # add_activation_summary(fully2)
         fully2 = tf.nn.dropout(fully2, dropout_rate)
         
     with tf.variable_scope('out') as scope:
