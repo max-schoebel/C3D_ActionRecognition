@@ -23,12 +23,18 @@ INPUT_HEIGHT = 112
 TESTPATH1 =  './ucfTrainTestlist/testlist01.txt'
 TRAINPATH1 = './ucfTrainTestlist/trainlist01.txt'
 
+
+### DEBUG ONLY!!!!!!!
+#last_batch = []
+### DEBUG ONLY!!!!!!!
+
+
 with open("./ucfTrainTestlist/classInd.txt") as file:
     class_list = file.read().split()[1::2]
     
 
 def one_hot(index):
-    encoding = np.zeros(NUM_CLASSES)
+    encoding = np.zeros(NUM_CLASSES, dtype=np.float32)
     encoding[index] = 1
     return encoding
 
@@ -76,9 +82,10 @@ batch_called = 0
 
 def get_next_batch(batch_size):
     global batch_called
+    global last_batch
     
     batch = np.zeros((batch_size, TEMPORAL_DEPTH, INPUT_HEIGHT, INPUT_WIDTH, INPUT_CHANNELS), dtype=np.uint8)
-    labels = np.zeros((batch_size, NUM_CLASSES))
+    labels = np.zeros((batch_size, NUM_CLASSES), dtype=np.float32)
     
     start = batch_called * batch_size
     end = start + batch_size
@@ -90,6 +97,9 @@ def get_next_batch(batch_size):
             complete_path = './UCF-101/{}/{}'.format(foldername, filename)
             batch[i, :, :, :, :] = create_crops_from_video(complete_path, 1)
             labels[i, :] = one_hot(class_list.index(foldername))
+        ### DEBUG ONLY!!!!!!!
+        #last_batch.append([batch, labels])
+        ### DEBUG ONLY!!!!!!!
         return batch, labels, False
     else:
         batch_called = 0
@@ -112,7 +122,7 @@ test_file_tuples = get_folder_filename_tuples(TESTPATH1)
 def get_test_set():
     num_test_videos = len(test_file_tuples)
     testset = np.zeros((num_test_videos, TEMPORAL_DEPTH, INPUT_HEIGHT, INPUT_WIDTH, INPUT_CHANNELS), dtype=np.uint8)
-    labels = np.zeros((num_test_videos, NUM_CLASSES))
+    labels = np.zeros((num_test_videos, NUM_CLASSES), dtype=np.float32)
     for i in range(num_test_videos):
         foldername, filename = test_file_tuples[i]
         complete_path = './UCF-101/{}/{}'.format(foldername, filename)
@@ -124,7 +134,8 @@ def get_test_set():
 def play_clip(clip):
     for i in range(clip.shape[0]):
         cv2.imshow('clip', clip[i])
-        cv2.waitKey(10)
+        cv2.waitKey(100)
+    cv2.destroyAllWindows()
     
     
 if __name__ == '__main__':

@@ -4,9 +4,10 @@ import tensorflow as tf
 def add_activation_summary(layer):
     # changes needed for multi cpu training!
     # i.e. remove "tower[0-9]*" from it!
-    tensor_name = layer.op.name
-    tf.summary.scalar("sparsity", tf.nn.zero_fraction(layer))
-    tf.summary.histogram("activations", layer)
+    # tensor_name = layer.op.name
+    # tf.summary.scalar("sparsity", tf.nn.zero_fraction(layer))
+    # tf.summary.histogram("activations", layer)
+    pass
     
     
 def model_variable(name, shape, wd):
