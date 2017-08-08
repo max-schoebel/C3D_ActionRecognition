@@ -1,3 +1,4 @@
+#!/bin/python3
 import tensorflow as tf
 import C3Dmodel
 import InputPipeline as ip
@@ -6,6 +7,8 @@ import numpy as np
 import os
 import threading
 import ipdb as pdb
+from tensorflow.python.client import timeline
+from TimeLiner import TimeLiner
 
 from datetime import datetime
 
@@ -102,8 +105,7 @@ with my_graph.as_default(), tf.device('/cpu:0'):
             with tf.device('/gpu:%d'%i), tf.name_scope('Tower%d'%i) as scope:
     
                 input_placeholder, output_placeholder, epoch_ended_placeholder = queue_input_placeholders()
-                gpu_queue = tf.FIFOQueue(100, [tf.float32, tf.float32, tf.bool])
-                gpu_queue.size()
+                gpu_queue = tf.FIFOQueue(5, [tf.float32, tf.float32, tf.bool])
                 
                 enqueue_op = gpu_queue.enqueue([input_placeholder, output_placeholder, epoch_ended_placeholder])
                 tf.add_to_collection('enqueue', enqueue_op)
@@ -111,8 +113,6 @@ with my_graph.as_default(), tf.device('/cpu:0'):
                 tf.add_to_collection('close_queue', close_op)
                 
                 data, labels, epoch_ended = gpu_queue.dequeue()
-                tf.add_to_collection('checking', data)
-                tf.add_to_collection('checking', labels)
                 
                 network_output = C3Dmodel.inference(data, EXAMPLES_PER_GPU, dropout_placeholder, NUM_CLASSES, collection='network_output')
                 xentropy_loss = C3Dmodel.loss(network_output, labels, collection='xentropy_loss')
@@ -167,13 +167,17 @@ def run_training():
     with tf.Session(graph=my_graph, config=tf.ConfigProto(log_device_placement=True, allow_soft_placement=True)) as sess:
     # with tf.Session(graph=my_graph, config=tf.ConfigProto(allow_soft_placement=True)) as sess:
         sess.run(tf.global_variables_initializer())
+    
+        # TIMELINE TEST
+        options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
+        run_metadata = tf.RunMetadata()
+        ##############
         
         EPOCHS = 1000
         coord = tf.train.Coordinator()
         enqueue_thread = threading.Thread(target=enqueue_gpu_batches,
                                           args=(coord, my_graph, sess,))
         enqueue_thread.start()
-        # wait for queue to be filled a bit
         
         assert(tf.get_default_graph() == my_graph)
         print('------------------------------------------------------------------------------')
@@ -181,21 +185,25 @@ def run_training():
         print('Tensorflow version:', tf.__version__)
         print('------------------------------------------------------------------------------')
         
-        # shape1 = (EXAMPLES_PER_GPU, TEMPORAL_DEPTH, INPUT_HEIGHT, INPUT_WIDTH, INPUT_CHANNELS)
-        # shape2 = (EXAMPLES_PER_GPU, NUM_CLASSES)
-        # feed_dict = create_train_dict(np.zeros(shape1, dtype=np.float32), np.zeros(shape2, np.float32), False, my_graph)
-        # feed_dict[dropout_placeholder] = 0.5
         feed_dict = {dropout_placeholder : 0.5}
-        
+    
+    #
+        EPOCHS = 1
+    #
+        tl = TimeLiner()
+    
         for epoch in range(EPOCHS):
             end_epoch = False
             if os.path.isfile('./terminate'):
                 break
             while not end_epoch:
                 before = time.time()
-                _, loss, merged_summ, step, end_epoch, data1, labels1 = sess.run(
-                    [train_step, xentropy_loss, merged_summaries, global_step, epoch_ended] + tf.get_collection('checking'),
-                    feed_dict=feed_dict)
+                _, loss, merged_summ, step, end_epoch = sess.run(
+                    [train_step, xentropy_loss, merged_summaries, global_step, epoch_ended],
+                    feed_dict=feed_dict,
+                    # TIMELINE TEST
+                    options=options,
+                    run_metadata=run_metadata)
                 # pdb.set_trace()
                 update_duration = time.time() - before
                 before = time.time()
@@ -206,12 +214,20 @@ def run_training():
                 print(" - Update-step with {} examples took:\t{}".format(BATCH_SIZE, update_duration))
                 print(" - Clips/second:\t{}".format(BATCH_SIZE/update_duration))
                 print(" - Resulting training loss:\t{}".format(loss))
+                
+                # TIMELINE TEST
+                fetched_timeline = timeline.Timeline(run_metadata.step_stats)
+                chrome_trace = fetched_timeline.generate_chrome_trace_format()
+                tl.update_timeline(chrome_trace)
+                
             #now = datetime.utcnow().strftime("%Y%m%d%:H%M%S")
             print("------- EPOCH ENDED !!!!! -----------")
             
             # accuracy, accuracy_summary, step = sess.run([accuracy_op, accuracy_summary_op, global_step], feed_dict=test_dict)
             # writer.add_summary(accuracy_summary, step)
+            # TODO: Move to tensorflow command FLAGS, i.e. to switch of logging for debug purposes
             saver.save(sess, ckptdir + "/model-{}.ckpt".format(epoch))
+            tl.save('./chrome_trace')
             
         coord.request_stop()
         sess.run(my_graph.get_collection('close_queue'))
