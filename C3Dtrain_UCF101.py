@@ -32,10 +32,10 @@ NUM_CLASSES = ip.NUM_CLASSES
 BATCH_SIZE = 2
 NUM_GPUS = 1
 NUMBER_DATA_THREADS = 1
-
 assert(BATCH_SIZE % NUM_GPUS == 0)
 EXAMPLES_PER_GPU = int(BATCH_SIZE / NUM_GPUS)
 
+WRITE_TIMELINE = True
 
 
 def queue_input_placeholders():
@@ -98,21 +98,23 @@ with my_graph.as_default(), tf.device('/cpu:0'):
     
     dropout_placeholder = tf.placeholder(tf.float32, name='dropout_placeholder')
     tf.add_to_collection("dropout", dropout_placeholder)
+    
+    gpu_queues = []
+    for i in range(NUM_GPUS):
+        input_placeholder, output_placeholder, epoch_ended_placeholder = queue_input_placeholders()
+        gpu_queue = tf.FIFOQueue(5, [tf.float32, tf.float32, tf.bool], name='TowerQueue{}'.format(i))
+        gpu_queues.append(gpu_queue)
+    
+        enqueue_op = gpu_queue.enqueue([input_placeholder, output_placeholder, epoch_ended_placeholder])
+        tf.add_to_collection('enqueue', enqueue_op)
+        close_op = gpu_queue.close(cancel_pending_enqueues=True)
+        tf.add_to_collection('close_queue', close_op)
 
     tower_gradients = []
     with tf.variable_scope(tf.get_variable_scope()):
         for i in range(NUM_GPUS):
             with tf.device('/gpu:%d'%i), tf.name_scope('Tower%d'%i) as scope:
-    
-                input_placeholder, output_placeholder, epoch_ended_placeholder = queue_input_placeholders()
-                gpu_queue = tf.FIFOQueue(5, [tf.float32, tf.float32, tf.bool])
-                
-                enqueue_op = gpu_queue.enqueue([input_placeholder, output_placeholder, epoch_ended_placeholder])
-                tf.add_to_collection('enqueue', enqueue_op)
-                close_op = gpu_queue.close(cancel_pending_enqueues=True)
-                tf.add_to_collection('close_queue', close_op)
-                
-                data, labels, epoch_ended = gpu_queue.dequeue()
+                data, labels, epoch_ended = gpu_queues[i].dequeue()
                 
                 network_output = C3Dmodel.inference(data, EXAMPLES_PER_GPU, dropout_placeholder, NUM_CLASSES, collection='network_output')
                 xentropy_loss = C3Dmodel.loss(network_output, labels, collection='xentropy_loss')
@@ -130,6 +132,7 @@ with my_graph.as_default(), tf.device('/cpu:0'):
     merged_summaries = tf.summary.merge_all()
     writer = tf.summary.FileWriter(logdir, my_graph)
     saver = tf.train.Saver()
+    my_graph.finalize()
     
     
 def create_train_dict(batch, labels, epoch_ended, gr):
@@ -166,31 +169,32 @@ def enqueue_gpu_batches(coord, graph, sess):
 def run_training():
     with tf.Session(graph=my_graph, config=tf.ConfigProto(log_device_placement=True, allow_soft_placement=True)) as sess:
     # with tf.Session(graph=my_graph, config=tf.ConfigProto(allow_soft_placement=True)) as sess:
+        assert(tf.get_default_graph() == my_graph)
         sess.run(tf.global_variables_initializer())
-    
-        # TIMELINE TEST
-        options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
-        run_metadata = tf.RunMetadata()
-        ##############
-        
+
         EPOCHS = 1000
         coord = tf.train.Coordinator()
         enqueue_thread = threading.Thread(target=enqueue_gpu_batches,
                                           args=(coord, my_graph, sess,))
         enqueue_thread.start()
+    
+        # TIMELINE TEST
+        if WRITE_TIMELINE:
+            options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
+            run_metadata = tf.RunMetadata()
+            tl = TimeLiner()
+            EPOCHS = 1
+        else:
+            options = None
+            run_metadata = None
+        ##############
         
-        assert(tf.get_default_graph() == my_graph)
         print('------------------------------------------------------------------------------')
         print('Trainable parameters:', np.sum([np.prod(v.shape) for v in tf.trainable_variables()]))
         print('Tensorflow version:', tf.__version__)
         print('------------------------------------------------------------------------------')
         
         feed_dict = {dropout_placeholder : 0.5}
-    
-    #
-        EPOCHS = 1
-    #
-        tl = TimeLiner()
     
         for epoch in range(EPOCHS):
             end_epoch = False
@@ -216,9 +220,10 @@ def run_training():
                 print(" - Resulting training loss:\t{}".format(loss))
                 
                 # TIMELINE TEST
-                fetched_timeline = timeline.Timeline(run_metadata.step_stats)
-                chrome_trace = fetched_timeline.generate_chrome_trace_format()
-                tl.update_timeline(chrome_trace)
+                if WRITE_TIMELINE:
+                    fetched_timeline = timeline.Timeline(run_metadata.step_stats)
+                    chrome_trace = fetched_timeline.generate_chrome_trace_format()
+                    tl.update_timeline(chrome_trace)
                 
             #now = datetime.utcnow().strftime("%Y%m%d%:H%M%S")
             print("------- EPOCH ENDED !!!!! -----------")
@@ -227,7 +232,8 @@ def run_training():
             # writer.add_summary(accuracy_summary, step)
             # TODO: Move to tensorflow command FLAGS, i.e. to switch of logging for debug purposes
             saver.save(sess, ckptdir + "/model-{}.ckpt".format(epoch))
-            tl.save('./chrome_trace')
+            if WRITE_TIMELINE:
+                tl.save('./chrome_trace')
             
         coord.request_stop()
         sess.run(my_graph.get_collection('close_queue'))
