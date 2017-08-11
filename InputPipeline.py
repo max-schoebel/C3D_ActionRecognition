@@ -1,9 +1,6 @@
-import tensorflow as tf
-import os
 import numpy as np
 import random
 from open_video import open_video
-from datetime import datetime
 import cv2
 import time
 
@@ -23,9 +20,11 @@ INPUT_HEIGHT = 112
 TESTPATH1 =  './ucfTrainTestlist/testlist01.txt'
 TRAINPATH1 = './ucfTrainTestlist/trainlist01.txt'
 
+DEBUG = False
 
 ### DEBUG ONLY!!!!!!!
-#last_batch = []
+if DEBUG:
+    last_batch = []
 ### DEBUG ONLY!!!!!!!
 
 
@@ -84,7 +83,7 @@ def get_next_batch(batch_size):
     global batch_called
     global last_batch
     
-    batch = np.zeros((batch_size, TEMPORAL_DEPTH, INPUT_HEIGHT, INPUT_WIDTH, INPUT_CHANNELS), dtype=np.uint8)
+    batch = np.zeros((batch_size, TEMPORAL_DEPTH, INPUT_HEIGHT, INPUT_WIDTH, INPUT_CHANNELS), dtype=np.float32)
     labels = np.zeros((batch_size, NUM_CLASSES), dtype=np.float32)
     
     start = batch_called * batch_size
@@ -98,7 +97,8 @@ def get_next_batch(batch_size):
             batch[i, :, :, :, :] = create_crops_from_video(complete_path, 1)
             labels[i, :] = one_hot(class_list.index(foldername))
         ### DEBUG ONLY!!!!!!!
-        #last_batch.append([batch, labels])
+        if DEBUG:
+            last_batch.append([batch, labels])
         ### DEBUG ONLY!!!!!!!
         return batch, labels, False
     else:
@@ -139,7 +139,7 @@ def play_clip(clip):
     
     
 if __name__ == '__main__':
-    testset, labels = get_test_set()
+    # testset, labels = get_test_set()
     
     # before = time.time()
     # batch, labels = get_test_set()
@@ -148,3 +148,7 @@ if __name__ == '__main__':
     # for i in range(50):
     #     play_clip(batch[i])
     # cv2.destroyAllWindows()
+    
+    before = time.time()
+    data, labels, epoch_ended = get_next_batch(40)
+    print('TOOK: ', before - time.time())

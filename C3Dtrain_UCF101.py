@@ -9,6 +9,7 @@ import threading
 import ipdb as pdb
 from tensorflow.python.client import timeline
 from TimeLiner import TimeLiner
+import sys
 
 from datetime import datetime
 
@@ -29,13 +30,14 @@ INPUT_HEIGHT = ip.INPUT_HEIGHT
 INPUT_CHANNELS = ip.INPUT_CHANNELS
 NUM_CLASSES = ip.NUM_CLASSES
 
-BATCH_SIZE = 2
-NUM_GPUS = 1
-NUMBER_DATA_THREADS = 1
+BATCH_SIZE = 40
+NUM_GPUS = 2
+NUMBER_DATA_THREADS = 7
+GPU_QUEUES_CAPACITY = 10
 assert(BATCH_SIZE % NUM_GPUS == 0)
 EXAMPLES_PER_GPU = int(BATCH_SIZE / NUM_GPUS)
 
-WRITE_TIMELINE = True
+WRITE_TIMELINE = False
 
 
 def queue_input_placeholders():
@@ -97,26 +99,28 @@ with my_graph.as_default(), tf.device('/cpu:0'):
     # TODO: capture current adam learning rate
     
     dropout_placeholder = tf.placeholder(tf.float32, name='dropout_placeholder')
+    is_training_placeholder = tf.placeholder(tf.bool, name='is_training_placeholder')
     tf.add_to_collection("dropout", dropout_placeholder)
-    
-    gpu_queues = []
-    for i in range(NUM_GPUS):
-        input_placeholder, output_placeholder, epoch_ended_placeholder = queue_input_placeholders()
-        gpu_queue = tf.FIFOQueue(5, [tf.float32, tf.float32, tf.bool], name='TowerQueue{}'.format(i))
-        gpu_queues.append(gpu_queue)
-    
-        enqueue_op = gpu_queue.enqueue([input_placeholder, output_placeholder, epoch_ended_placeholder])
-        tf.add_to_collection('enqueue', enqueue_op)
-        close_op = gpu_queue.close(cancel_pending_enqueues=True)
-        tf.add_to_collection('close_queue', close_op)
+    tf.add_to_collection("training", is_training_placeholder)
 
     tower_gradients = []
     with tf.variable_scope(tf.get_variable_scope()):
         for i in range(NUM_GPUS):
             with tf.device('/gpu:%d'%i), tf.name_scope('Tower%d'%i) as scope:
-                data, labels, epoch_ended = gpu_queues[i].dequeue()
+
+                with tf.device('/cpu:0'):
+                    input_placeholder, output_placeholder, epoch_ended_placeholder = queue_input_placeholders()
+                    gpu_queue = tf.FIFOQueue(GPU_QUEUES_CAPACITY, [tf.float32, tf.float32, tf.bool], name='InputQueue{}'.format(i))
+                    tf.summary.scalar('queue_fill%d'%i, gpu_queue.size())
                 
-                network_output = C3Dmodel.inference(data, EXAMPLES_PER_GPU, dropout_placeholder, NUM_CLASSES, collection='network_output')
+                    enqueue_op = gpu_queue.enqueue([input_placeholder, output_placeholder, epoch_ended_placeholder])
+                    tf.add_to_collection('enqueue', enqueue_op)
+                    close_op = gpu_queue.close(cancel_pending_enqueues=True)
+                    tf.add_to_collection('close_queue', close_op)
+
+                data, labels, epoch_ended = gpu_queue.dequeue()
+                
+                network_output = C3Dmodel.inference(data, EXAMPLES_PER_GPU, dropout_placeholder, is_training_placeholder, NUM_CLASSES, collection='network_output')
                 xentropy_loss = C3Dmodel.loss(network_output, labels, collection='xentropy_loss')
                 
                 # train_step = C3Dmodel.train(xentropy_loss, 1e-04, global_step, collection='train_step')
@@ -132,7 +136,7 @@ with my_graph.as_default(), tf.device('/cpu:0'):
     merged_summaries = tf.summary.merge_all()
     writer = tf.summary.FileWriter(logdir, my_graph)
     saver = tf.train.Saver()
-    my_graph.finalize()
+#    my_graph.finalize()
     
     
 def create_train_dict(batch, labels, epoch_ended, gr):
@@ -146,7 +150,7 @@ def create_train_dict(batch, labels, epoch_ended, gr):
     return train_dict
     
     
-def enqueue_gpu_batches(coord, graph, sess):
+def enqueue_gpu_batches(coord, graph, sess, starttime):
     """
     This function is run in a background thread.
         my_graph.get_collection('placeholders')
@@ -158,7 +162,6 @@ def enqueue_gpu_batches(coord, graph, sess):
     try:
         while not coord.should_stop():
             data, labels, epoch_ended = ip.get_next_batch(BATCH_SIZE)
-            data = data.astype(np.float32)
             feed_dict = create_train_dict(data, labels, epoch_ended, graph)
             sess.run(graph.get_collection('enqueue'), feed_dict=feed_dict)
     except:
@@ -171,12 +174,13 @@ def run_training():
     # with tf.Session(graph=my_graph, config=tf.ConfigProto(allow_soft_placement=True)) as sess:
         assert(tf.get_default_graph() == my_graph)
         sess.run(tf.global_variables_initializer())
+        starttime = time.time()
 
         EPOCHS = 1000
         coord = tf.train.Coordinator()
-        enqueue_thread = threading.Thread(target=enqueue_gpu_batches,
-                                          args=(coord, my_graph, sess,))
-        enqueue_thread.start()
+        enqueue_threads = [threading.Thread(target=enqueue_gpu_batches, args=(coord, my_graph, sess, starttime)) for _ in range(NUMBER_DATA_THREADS)]
+        for t in enqueue_threads:
+            t.start()
     
         # TIMELINE TEST
         if WRITE_TIMELINE:
@@ -194,7 +198,7 @@ def run_training():
         print('Tensorflow version:', tf.__version__)
         print('------------------------------------------------------------------------------')
         
-        feed_dict = {dropout_placeholder : 0.5}
+        feed_dict = {dropout_placeholder : 0.5, is_training_placeholder : False}
     
         for epoch in range(EPOCHS):
             end_epoch = False
@@ -213,7 +217,7 @@ def run_training():
                 before = time.time()
                 writer.add_summary(merged_summ, step)
                 summary_duration = time.time() - before
-                print("Executed global-step  {}  (epoch {})".format(step, epoch))
+                print("Executed global-step  {}  (epoch {})  (time {})".format(step, epoch, time.time()-starttime))
                 print(" - Writing summaries took:\t{}".format(summary_duration))
                 print(" - Update-step with {} examples took:\t{}".format(BATCH_SIZE, update_duration))
                 print(" - Clips/second:\t{}".format(BATCH_SIZE/update_duration))
@@ -237,7 +241,7 @@ def run_training():
             
         coord.request_stop()
         sess.run(my_graph.get_collection('close_queue'))
-        coord.join([enqueue_thread])
+        coord.join(enqueue_threads)
         
         
         # before = time.time()
