@@ -1,6 +1,7 @@
 import tensorflow as tf
 from tensorflow import layers
 
+WEIGHT_DECAY = 0.0005
 
 def add_activation_summary(layer):
     # changes needed for multi cpu training!
@@ -15,6 +16,9 @@ def model_variable(name, shape, wd):
     def var_in_scope(scope):
         with tf.device('/cpu:0'), tf.variable_scope(scope):
             var = tf.get_variable(name, shape, dtype=tf.float32, initializer=tf.truncated_normal_initializer(0,0.1))
+            if wd is not None:
+                weight_decay = tf.multiply(tf.nn.l2_loss(var), wd, name='weight_loss')
+                tf.add_to_collection('losses', weight_decay)
         return var
     return var_in_scope
 
@@ -30,7 +34,9 @@ def inference(vid_placeholder, batch_size, dropout_rate, is_training, num_classe
         """
         assert(len(names) == 3)
         conv = tf.nn.conv3d(x, w, strides=[1, 1, 1, 1, 1], padding='SAME', name=names[0])
-        conv_bn = layers.batch_normalization(conv, 4, training=is_training, name=names[2])
+        conv_bn = layers.batch_normalization(
+            conv, 4, training=is_training, name=names[2],
+            beta_regularizer=tf.nn.l2_loss, gamma_regularizer=tf.nn.l2_loss)
         # conv_out = tf.nn.bias_add(conv, b)
         return tf.nn.elu(conv_bn, name=names[1])
     
@@ -42,17 +48,17 @@ def inference(vid_placeholder, batch_size, dropout_rate, is_training, num_classe
         return pool_out
 
     weight_dict = {
-        'wconv1': model_variable('wconv1', [3, 3, 3, 3, 64], 0.0005),
-        'wconv2': model_variable('wconv2', [3, 3, 3, 64, 128], 0.0005),
-        'wconv3a': model_variable('wconv3a', [3, 3, 3, 128, 256], 0.0005),
-        'wconv3b': model_variable('wconv3b', [3, 3, 3, 256, 256], 0.0005),
-        'wconv4a': model_variable('wconv4a', [3, 3, 3, 256, 512], 0.0005),
-        'wconv4b': model_variable('wconv4b', [3, 3, 3, 512, 512], 0.0005),
-        'wconv5a': model_variable('wconv5a', [3, 3, 3, 512, 512], 0.0005),
-        'wconv5b': model_variable('wconv5b', [3, 3, 3, 512, 512], 0.0005),
-        'wfully1': model_variable('wfully1', [8192, 4096], 0.0005),
-        'wfully2': model_variable('wfully2', [4096, 4096], 0.0005),
-        'wout': model_variable('wout', [4096, num_classes], 0.0005)
+        'wconv1': model_variable('wconv1', [3, 3, 3, 3, 64], WEIGHT_DECAY),
+        'wconv2': model_variable('wconv2', [3, 3, 3, 64, 128], WEIGHT_DECAY),
+        'wconv3a': model_variable('wconv3a', [3, 3, 3, 128, 256], WEIGHT_DECAY),
+        'wconv3b': model_variable('wconv3b', [3, 3, 3, 256, 256], WEIGHT_DECAY),
+        'wconv4a': model_variable('wconv4a', [3, 3, 3, 256, 512], WEIGHT_DECAY),
+        'wconv4b': model_variable('wconv4b', [3, 3, 3, 512, 512], WEIGHT_DECAY),
+        'wconv5a': model_variable('wconv5a', [3, 3, 3, 512, 512], WEIGHT_DECAY),
+        'wconv5b': model_variable('wconv5b', [3, 3, 3, 512, 512], WEIGHT_DECAY),
+        'wfully1': model_variable('wfully1', [8192, 4096], WEIGHT_DECAY),
+        'wfully2': model_variable('wfully2', [4096, 4096], WEIGHT_DECAY),
+        'wout': model_variable('wout', [4096, num_classes], WEIGHT_DECAY)
     }
 
     bias_dict = {
@@ -141,15 +147,24 @@ def inference(vid_placeholder, batch_size, dropout_rate, is_training, num_classe
     return out
     
     
-def loss(network_output, true_labels, collection):
-    loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=true_labels, logits=network_output, name='xentropy'))
-    tf.summary.scalar('loss', loss)
-    tf.add_to_collection(collection, loss)
-    return loss
+def loss(network_output, training_labels, collection):
+    cross_entropy = tf.nn.softmax_cross_entropy_with_logits(
+        labels=training_labels, logits=network_output, name='xentropy_per_batch')
+    mean_cross_entropy = tf.reduce_mean(cross_entropy, name='mean_xentropy')
+    tf.summary.scalar('mean_cross_entropy_per_batch', mean_cross_entropy)
+    tf.add_to_collection('losses', mean_cross_entropy)
+    total_loss = tf.add_n(tf.get_collection('losses'), name='total_loss')
+    bn_regularization_losses = WEIGHT_DECAY * tf.add_n(tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES))
+    total_loss = total_loss + bn_regularization_losses
+    tf.summary.scalar('total_loss_with_l2_regularization', total_loss)
+    tf.add_to_collection(collection, total_loss)
+    return total_loss
 
 
 def train(loss, learning_rate, global_step, collection):
-    train_step = tf.train.AdamOptimizer(learning_rate).minimize(loss, global_step=global_step)
+    adam = tf.train.AdamOptimizer(learning_rate)
+    train_step = adam.minimize(loss, global_step=global_step)
+    tf.summary.scalar('learning_rate', adam._lr) # does not work!!!
     tf.add_to_collection(collection, train_step)
     return train_step
 
