@@ -30,8 +30,8 @@ INPUT_HEIGHT = ip.INPUT_HEIGHT
 INPUT_CHANNELS = ip.INPUT_CHANNELS
 NUM_CLASSES = ip.NUM_CLASSES
 
-BATCH_SIZE = 40
-NUM_GPUS = 2
+BATCH_SIZE = 10
+NUM_GPUS = 1
 NUMBER_DATA_THREADS = 4
 GPU_QUEUES_CAPACITY = 10
 assert(BATCH_SIZE % NUM_GPUS == 0)
@@ -42,9 +42,9 @@ WRITE_TIMELINE = False
 
 def queue_input_placeholders():
     # TODO: Test with variable BATCH_SIZE
-    input_placeholder = tf.placeholder(tf.float32,
-                                       [EXAMPLES_PER_GPU, TEMPORAL_DEPTH, INPUT_HEIGHT, INPUT_WIDTH, INPUT_CHANNELS],
-                                       name='input_placeholder')
+    input_placeholder = tf.placeholder(
+        tf.float32, [EXAMPLES_PER_GPU, TEMPORAL_DEPTH, INPUT_HEIGHT, INPUT_WIDTH, INPUT_CHANNELS],
+        name='input_placeholder')
     tf.add_to_collection("placeholders", input_placeholder)
     output_placeholder = tf.placeholder(tf.float32, [EXAMPLES_PER_GPU, NUM_CLASSES], name='output_placeholder')
     tf.add_to_collection("placeholders", output_placeholder)
@@ -110,23 +110,28 @@ with my_graph.as_default(), tf.device('/cpu:0'):
 
                 with tf.device('/cpu:0'):
                     input_placeholder, output_placeholder, epoch_ended_placeholder = queue_input_placeholders()
-                    gpu_queue = tf.FIFOQueue(GPU_QUEUES_CAPACITY, [tf.float32, tf.float32, tf.bool], name='InputQueue{}'.format(i))
+                    gpu_queue = tf.FIFOQueue(
+                        GPU_QUEUES_CAPACITY, [tf.float32, tf.float32, tf.bool], name='InputQueue{}'.format(i))
                     tf.summary.scalar('queue_fill%d'%i, gpu_queue.size())
                 
-                    enqueue_op = gpu_queue.enqueue([input_placeholder, output_placeholder, epoch_ended_placeholder])
+                    enqueue_op = gpu_queue.enqueue(
+                        [input_placeholder, output_placeholder, epoch_ended_placeholder])
                     tf.add_to_collection('enqueue', enqueue_op)
                     close_op = gpu_queue.close(cancel_pending_enqueues=True)
                     tf.add_to_collection('close_queue', close_op)
 
                 data, labels, epoch_ended = gpu_queue.dequeue()
                 
-                network_output = C3Dmodel.inference(data, EXAMPLES_PER_GPU, dropout_placeholder, is_training_placeholder, NUM_CLASSES, collection='network_output')
-                xentropy_loss = C3Dmodel.loss(network_output, labels, collection='xentropy_loss')
+                network_output = C3Dmodel.inference(
+                    data, EXAMPLES_PER_GPU, dropout_placeholder, is_training_placeholder, NUM_CLASSES,
+                    collection='network_output')
+                xentropy_loss, regularization_loss = C3Dmodel.loss(network_output, labels, collection='xentropy_loss')
                 
                 # train_step = C3Dmodel.train(xentropy_loss, 1e-04, global_step, collection='train_step')
                 grads = optimizer.compute_gradients(xentropy_loss)
                 tower_gradients.append(grads)
-                accuracy_op, accuracy_summary_op = C3Dmodel.accuracy(network_output, labels, collection='accuracy_op')
+                accuracy_op, accuracy_summary_op = C3Dmodel.accuracy(
+                    network_output, labels, collection='accuracy_op')
                 
                 tf.get_variable_scope().reuse_variables()
     
@@ -206,8 +211,8 @@ def run_training():
                 break
             while not end_epoch:
                 before = time.time()
-                _, loss, merged_summ, step, end_epoch = sess.run(
-                    [train_step, xentropy_loss, merged_summaries, global_step, epoch_ended],
+                _, loss, merged_summ, step, end_epoch, reg_loss = sess.run(
+                    [train_step, xentropy_loss, merged_summaries, global_step, epoch_ended, regularization_loss],
                     feed_dict=feed_dict,
                     # TIMELINE TEST
                     options=options,
@@ -221,7 +226,7 @@ def run_training():
                 print(" - Writing summaries took:\t{}".format(summary_duration))
                 print(" - Update-step with {} examples took:\t{}".format(BATCH_SIZE, update_duration))
                 print(" - Clips/second:\t{}".format(BATCH_SIZE/update_duration))
-                print(" - Resulting training loss:\t{}".format(loss))
+                print(" - Resulting training loss:\t{}  (regularization {})".format(loss, reg_loss))
                 
                 # TIMELINE TEST
                 if WRITE_TIMELINE:
