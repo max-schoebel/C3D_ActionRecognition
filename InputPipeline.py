@@ -1,6 +1,6 @@
 import numpy as np
 import random
-from open_video import open_video
+from videotools import open_video
 import cv2
 import time
 
@@ -17,8 +17,8 @@ NUM_CLASSES = 101
 INPUT_WIDTH = 112
 INPUT_HEIGHT = 112
 
-TESTPATH1 =  './ucfTrainTestlist/testlist01.txt'
-TRAINPATH1 = './ucfTrainTestlist/trainlist01.txt'
+TESTPATH1 =  './datasets/UCF-101/ucfTrainTestlist/testlist01.txt'
+TRAINPATH1 = './datasets/UCF-101/ucfTrainTestlist/trainlist01.txt'
 
 DEBUG = False
 
@@ -28,7 +28,7 @@ if DEBUG:
 ### DEBUG ONLY!!!!!!!
 
 
-with open("./ucfTrainTestlist/classInd.txt") as file:
+with open("./datasets/UCF-101/ucfTrainTestlist/classInd.txt") as file:
     class_list = file.read().split()[1::2]
     
 
@@ -93,7 +93,7 @@ def get_next_batch(batch_size):
         batch_called = batch_called + 1
         for i in range(batch_size):
             foldername, filename = train_file_tuples[start + i]
-            complete_path = './UCF-101/{}/{}'.format(foldername, filename)
+            complete_path = './datasets/UCF-101/{}/{}'.format(foldername, filename)
             batch[i, :, :, :, :] = create_crops_from_video(complete_path, 1)
             labels[i, :] = one_hot(class_list.index(foldername))
         ### DEBUG ONLY!!!!!!!
@@ -151,4 +151,4 @@ if __name__ == '__main__':
     
     before = time.time()
     data, labels, epoch_ended = get_next_batch(40)
-    print('TOOK: ', before - time.time())
+    print('TOOK: ', time.time() - before)

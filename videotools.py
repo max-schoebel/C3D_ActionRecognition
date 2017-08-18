@@ -32,11 +32,36 @@ def open_video(video_file, desired_width, desired_height):
     return frame_matrix
 
 
+def one_hot(index, num_classes):
+    encoding = np.zeros(num_classes, dtype=np.float32)
+    encoding[index] = 1
+    return encoding
+
+
+def play_clip(clip):
+    for i in range(clip.shape[0]):
+        cv2.imshow('clip', clip[i])
+        cv2.waitKey(100)
+    cv2.destroyAllWindows()
+    
+    
+def are_equal(dataprovider_batches, extracted_batches, batch_size):
+    ip_data, ip_labels, _ = dataprovider_batches
+    tf_data1, tf_labels1, _ = extracted_batches[0]
+    tf_data2, tf_labels2, _ = extracted_batches[1]
+    bhalf = int(batch_size / 2)
+    a = np.array_equal(ip_data[0:bhalf], tf_data1)
+    b = np.array_equal(ip_data[bhalf:batch_size], tf_data2)
+    c = np.array_equal(ip_labels[0:bhalf], tf_labels1)
+    d = np.array_equal(ip_labels[bhalf:batch_size], tf_labels2)
+    return a and b and c and d
+
+
 if __name__ == '__main__':
     file_list = ['UCF-101'+'/'+foldername + '/' + filename for
                  foldername in os.listdir('UCF-101') for
                  filename in os.listdir('UCF-101/'+foldername)]
     for i in range(100):
         before = time.time()
-        arr = open_video(file_list[i], 100, 100)
-        print("took {}".format(before - time.time()))
+        arr = open_video(file_list[i], 160, 120)
+        print("took {}".format(time.time() - before))

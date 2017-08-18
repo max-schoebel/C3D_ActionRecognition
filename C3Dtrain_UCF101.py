@@ -9,6 +9,8 @@ import threading
 import ipdb as pdb
 from tensorflow.python.client import timeline
 from TimeLiner import TimeLiner
+from DataProvider import UCF101Provider
+from EnqueueThread import EnqueueThread
 import sys
 
 from datetime import datetime
@@ -24,15 +26,15 @@ if not os.path.exists(logdir):
 if not os.path.exists(ckptdir):
     os.makedirs(ckptdir)
 
-TEMPORAL_DEPTH = ip.TEMPORAL_DEPTH
-INPUT_WIDTH = ip.INPUT_WIDTH
-INPUT_HEIGHT = ip.INPUT_HEIGHT
-INPUT_CHANNELS = ip.INPUT_CHANNELS
-NUM_CLASSES = ip.NUM_CLASSES
+TEMPORAL_DEPTH = UCF101Provider.TEMPORAL_DEPTH
+INPUT_WIDTH = UCF101Provider.INPUT_WIDTH
+INPUT_HEIGHT = UCF101Provider.INPUT_HEIGHT
+INPUT_CHANNELS = UCF101Provider.INPUT_CHANNELS
+NUM_CLASSES = UCF101Provider.NUM_CLASSES
 
 BATCH_SIZE = 2
 NUM_GPUS = 1
-NUMBER_DATA_THREADS = 4
+NUM_DATA_THREADS = 4
 GPU_QUEUES_CAPACITY = 10
 assert(BATCH_SIZE % NUM_GPUS == 0)
 EXAMPLES_PER_GPU = int(BATCH_SIZE / NUM_GPUS)
@@ -142,36 +144,6 @@ with my_graph.as_default(), tf.device('/cpu:0'):
     writer = tf.summary.FileWriter(logdir, my_graph)
     saver = tf.train.Saver()
 #    my_graph.finalize()
-    
-    
-def create_train_dict(batch, labels, epoch_ended, gr):
-    train_dict = {}
-    for tower_index in range(NUM_GPUS):
-        start = tower_index * EXAMPLES_PER_GPU
-        end = start + EXAMPLES_PER_GPU
-        train_dict[gr.get_tensor_by_name('Tower%d/input_placeholder:0'%tower_index)] = batch[start:end]
-        train_dict[gr.get_tensor_by_name('Tower%d/output_placeholder:0'%tower_index)] = labels[start:end]
-        train_dict[gr.get_tensor_by_name('Tower%d/epoch_ended_placeholder:0'%tower_index)] = epoch_ended
-    return train_dict
-    
-    
-def enqueue_gpu_batches(coord, graph, sess, starttime):
-    """
-    This function is run in a background thread.
-        my_graph.get_collection('placeholders')
-        Out[3]:
-        [<tf.Tensor 'Tower0/input_placeholder:0' shape=(20, 16, 112, 112, 3) dtype=float32>,
-         <tf.Tensor 'Tower0/output_placeholder:0' shape=(20, 101) dtype=float32>,
-         <tf.Tensor 'Tower0/epoch_ended_placeholder:0' shape=<unknown> dtype=bool>]
-    """
-    try:
-        while not coord.should_stop():
-            data, labels, epoch_ended = ip.get_next_batch(BATCH_SIZE)
-            feed_dict = create_train_dict(data, labels, epoch_ended, graph)
-            sess.run(graph.get_collection('enqueue'), feed_dict=feed_dict)
-    except:
-        print('Batch abandoned')
-        return
 
 
 def run_training():
@@ -179,11 +151,13 @@ def run_training():
     # with tf.Session(graph=my_graph, config=tf.ConfigProto(allow_soft_placement=True)) as sess:
         assert(tf.get_default_graph() == my_graph)
         sess.run(tf.global_variables_initializer())
+    
         starttime = time.time()
 
         EPOCHS = 1000
-        coord = tf.train.Coordinator()
-        enqueue_threads = [threading.Thread(target=enqueue_gpu_batches, args=(coord, my_graph, sess, starttime)) for _ in range(NUMBER_DATA_THREADS)]
+        data_provider = UCF101Provider(BATCH_SIZE)
+        enqueue_threads = [EnqueueThread(data_provider, my_graph, sess, NUM_GPUS, EXAMPLES_PER_GPU)
+            for _ in range(NUM_DATA_THREADS)]
         for t in enqueue_threads:
             t.start()
     
@@ -244,9 +218,9 @@ def run_training():
             if WRITE_TIMELINE:
                 tl.save('./chrome_trace')
             
-        coord.request_stop()
+        EnqueueThread.coord.request_stop()
         sess.run(my_graph.get_collection('close_queue'))
-        coord.join(enqueue_threads)
+        EnqueueThread.coord.join(enqueue_threads)
         
         
         # before = time.time()
