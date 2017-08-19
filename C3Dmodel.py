@@ -8,8 +8,7 @@ def add_activation_summary(layer):
     # i.e. remove "tower[0-9]*" from it!
     # tensor_name = layer.op.name
     # tf.summary.scalar("sparsity", tf.nn.zero_fraction(layer))
-    # tf.summary.histogram("activations", layer)
-    pass
+    tf.summary.histogram("activations", layer)
 
 def model_variable(name, shape, initializer, wd=None):
     def variable_creation_function():
@@ -143,8 +142,8 @@ def inference(vid_placeholder, batch_size, dropout_rate, is_training, num_classe
         
     with tf.variable_scope('out'):
         out = tf.matmul(fully2, weight_dict['wout']()) + bias_dict['bout']()
-        out = tf.nn.tanh(out, name='tanh_out')
-        # add_activation_summary(out)
+        # out = out / tf.reshape(tf.reduce_max(out, axis=1), (-1,1))
+        add_activation_summary(out)
     tf.add_to_collection(collection, out)
     return out
     

@@ -37,6 +37,7 @@ NUM_DATA_THREADS = 4
 GPU_QUEUES_CAPACITY = 10
 assert(BATCH_SIZE % NUM_GPUS == 0)
 EXAMPLES_PER_GPU = int(BATCH_SIZE / NUM_GPUS)
+LEARNING_RATE = 1e-03
 
 WRITE_TIMELINE = False
 
@@ -96,7 +97,7 @@ my_graph = tf.Graph()
 with my_graph.as_default(), tf.device('/cpu:0'):
     
     global_step = tf.Variable(0, name='global_step', trainable=False)
-    optimizer = tf.train.AdamOptimizer(1e-04)
+    optimizer = tf.train.AdamOptimizer(LEARNING_RATE)
     # TODO: capture current adam learning rate
     
     dropout_placeholder = tf.placeholder(tf.float32, name='dropout_placeholder')
