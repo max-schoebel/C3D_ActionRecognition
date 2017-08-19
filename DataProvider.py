@@ -20,6 +20,7 @@ class GenericDataProvider(ABC):
         self.debug_mode = debug_mode
 
         self.current_batch = 0
+        self.current_test_video = 0
         self.epochs_finished = 0
         if self.debug_mode:
             self.delivered_batches = []
@@ -42,6 +43,7 @@ class GenericDataProvider(ABC):
         self.current_split = split_index
         self.current_batch = 0
         self.epochs_finished = 0
+        self.current_test_video = 0
         
     def __create_crops_from_video(self, filename, num_crops=1):
         video_array = open_video(filename, self.SAMPLING_WIDTH, self.SAMPLING_HEIGHT)
@@ -113,15 +115,38 @@ class GenericDataProvider(ABC):
         return batch, labels, epoch_ended
     
     def get_next_test_video_clips(self):
-        pass
-
+        tuples = self.test_vidpath_label_tuples[self.current_split]
+        path_to_vidfile, onehot_label = tuples[self.current_test_video]
+        video_array = open_video(path_to_vidfile, self.SAMPLING_WIDTH, self.SAMPLING_HEIGHT)
+        num_video_frames = video_array.shape[0]
+        num_clips = num_video_frames - self.TEMPORAL_DEPTH + 1
+        clips = np.zeros((num_clips, self.TEMPORAL_DEPTH, self.INPUT_HEIGHT, self.INPUT_WIDTH, self.INPUT_CHANNELS))
+        
+        y_offset = int(self.INPUT_HEIGHT / 2)
+        x_offset = int(self.INPUT_WIDTH / 2)
+        y_start = int(self.SAMPLING_HEIGHT / 2) - y_offset
+        y_end = int(self.SAMPLING_HEIGHT / 2) + y_offset
+        x_start = int(self.SAMPLING_WIDTH / 2) - x_offset
+        x_end = int(self.SAMPLING_WIDTH / 2) + x_offset
+        
+        for i in range(num_clips):
+            clips[i] = video_array[i:i+self.TEMPORAL_DEPTH, y_start:y_end, x_start:x_end, :]
+        
+        if self.current_test_video == len(tuples) -1:
+            # this was the last video
+            self.current_test_video = 0
+            test_ended = True
+        else:
+            self.current_test_video += 1
+            test_ended = False
+        return clips, onehot_label, test_ended
     
 class UCF101Provider(GenericDataProvider):
     SAMPLING_WIDTH = 160
     SAMPLING_HEIGHT = 120
     NUM_CLASSES = 101
     
-    def __init__(self, batch_size, debug_mode=False, current_split=0):
+    def __init__(self, batch_size=40, debug_mode=False, current_split=0):
         self.num_splits = 3
         self.basedir = basedir = './datasets/UCF-101'
         super().__init__(batch_size, debug_mode, current_split)
@@ -149,7 +174,7 @@ class UCF101Provider(GenericDataProvider):
                 tuples = file.read().splitlines()
             tuples = map(lambda s: s.split('/'), tuples)
             tuples = list(map(lambda s: (self.basedir + '/' + s[0] + '/' + s[1], one_hot(class_index_dict[s[0]], self.NUM_CLASSES)), tuples))
-            self.training_vidpath_label_tuples.append(tuples)
+            self.test_vidpath_label_tuples.append(tuples)
     
     
 class CharadesProvider(GenericDataProvider):
@@ -174,4 +199,8 @@ if __name__ == "__main__":
     #     print('Took', time.time() - before)
     #     if epoch_ended:
     #         break
-    prov.set_test_tuples()
+    print(len(prov.test_vidpath_label_tuples[prov.current_split]))
+    prov.current_test_video = 3780
+    for i in range(6):
+        clips, onehot_label, test_ended = prov.get_next_test_video_clips()
+        print(prov.current_test_video, test_ended)

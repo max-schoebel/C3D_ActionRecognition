@@ -143,6 +143,7 @@ def inference(vid_placeholder, batch_size, dropout_rate, is_training, num_classe
         
     with tf.variable_scope('out'):
         out = tf.matmul(fully2, weight_dict['wout']()) + bias_dict['bout']()
+        out = tf.nn.tanh(out, name='tanh_out')
         # add_activation_summary(out)
     tf.add_to_collection(collection, out)
     return out
@@ -161,11 +162,11 @@ def loss(network_output, training_labels, collection):
     return total_loss, bn_regularization_losses
 
 
-def train(loss, learning_rate, global_step, collection):
-    optimizer = tf.train.AdamOptimizer(learning_rate)
-    train_step = optimizer.minimize(loss, global_step=global_step)
-    tf.add_to_collection(collection, train_step)
-    return train_step
+# def train(loss, learning_rate, global_step, collection):
+#     optimizer = tf.train.AdamOptimizer(learning_rate)
+#     train_step = optimizer.minimize(loss, global_step=global_step)
+#     tf.add_to_collection(collection, train_step)
+#     return train_step
 
 
 def accuracy(network_output, onehot_labels, collection):

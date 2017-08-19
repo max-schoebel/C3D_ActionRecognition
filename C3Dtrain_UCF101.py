@@ -1,7 +1,6 @@
 #!/bin/python3
 import tensorflow as tf
 import C3Dmodel
-import InputPipeline as ip
 import time
 import numpy as np
 import os
