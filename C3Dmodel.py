@@ -1,7 +1,7 @@
 import tensorflow as tf
 from tensorflow import layers
 
-WEIGHT_DECAY = 0.05
+WEIGHT_DECAY = 0.01
 
 def add_activation_summary(layer):
     # changes needed for multi cpu training!
@@ -46,7 +46,8 @@ def inference(vid_placeholder, batch_size, dropout_rate, is_training, num_classe
         return pool_out
 
     FULLY1_DIM = 8192
-    weight_init = tf.truncated_normal_initializer(0, 0.1)
+    weight_init = tf.truncated_normal_initializer(0, 0.01)
+    # weight_init = tf.contrib.layers.xavier_initializer()
     weight_dict = {
         'wconv1': model_variable('wconv1', [3, 3, 3, 3, 64], weight_init, WEIGHT_DECAY),
         'wconv2': model_variable('wconv2', [3, 3, 3, 64, 128], weight_init, WEIGHT_DECAY),
@@ -142,7 +143,7 @@ def inference(vid_placeholder, batch_size, dropout_rate, is_training, num_classe
         
     with tf.variable_scope('out'):
         out = tf.matmul(fully2, weight_dict['wout']()) + bias_dict['bout']()
-        # out = out / tf.reshape(tf.reduce_max(out, axis=1), (-1,1))
+        out = out - tf.expand_dims(tf.reduce_max(out,1),1)
         add_activation_summary(out)
     tf.add_to_collection(collection, out)
     return out
