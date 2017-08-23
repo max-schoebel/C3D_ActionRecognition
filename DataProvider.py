@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 import numpy as np
 import random
 from videotools import open_video, one_hot
+import csv
 
 
 class GenericDataProvider(ABC):
@@ -40,6 +41,7 @@ class GenericDataProvider(ABC):
         pass
     
     def reset_to_split(self, split_index):
+        # Todo: Check for validity according to provided number of splits
         self.current_split = split_index
         self.current_batch = 0
         self.epochs_finished = 0
@@ -140,7 +142,8 @@ class GenericDataProvider(ABC):
             self.current_test_video += 1
             test_ended = False
         return clips, onehot_label, test_ended
-    
+
+
 class UCF101Provider(GenericDataProvider):
     SAMPLING_WIDTH = 160
     SAMPLING_HEIGHT = 120
@@ -148,7 +151,7 @@ class UCF101Provider(GenericDataProvider):
     
     def __init__(self, batch_size=40, debug_mode=False, current_split=0):
         self.num_splits = 3
-        self.basedir = basedir = './datasets/UCF-101'
+        self.basedir = './datasets/UCF-101'
         super().__init__(batch_size, debug_mode, current_split)
         
     def set_training_tuples(self):
@@ -178,12 +181,57 @@ class UCF101Provider(GenericDataProvider):
     
     
 class CharadesProvider(GenericDataProvider):
-    pass
-            
+    """
+    Provider of the charades dataset.
+    NOTE: vidfile_label_tuples needs to contain tuples of format (path_to_vidfile, onehot_action_label, begin_time, end_time) now
+        since the videos in charades dataset contain multiple actions now!!!
+    """
+    SAMPLING_WIDTH = None
+    SAMPLING_HEIGHT = None
+    NUM_CLASSES = 157
+    
+    def __init__(self, batch_size=40, debug_mode=False):
+        self.num_splits = 1
+        self.base_dir = './datasets/charades'
+        with open(self.base_dir + '/charades_meta/Charades_v1_classes.txt') as file:
+            classstrings = file.read().splitlines()
+        self.class_index_dict = {}
+        self.class_text_dict = {}
+        for i in range(len(classstrings)):
+            split = classstrings[i].split(' ', 1)
+            self.class_index_dict[split[0]] = i
+            self.class_text_dict[split[0]] = split[1]
+        super().__init__(batch_size, debug_mode, current_split=0)
+        
+        
+    def set_training_tuples(self):
+        path_to_charades_train_file = self.base_dir + '/charades_meta/Charades_v1_train.csv'
+        with open(path_to_charades_train_file) as csvfile:
+            reader = csv.reader(csvfile, delimiter=',')
+            headerline = next(reader)
+            id_indx, action_indx = headerline.index('id'), headerline.index('actions')
+            for row in reader:
+                id = row[id_indx]
+                actions = row[action_indx]
+                if len(actions) > 0:  # some videos are not annotated with action classes and temporal intervals, skip!
+                    path_to_vidfile = self.base_dir + '/charades_v1_480/{}.mp4'.format(id)
+                    for action_triple in actions.split(';'):
+                        actionclass, begin_time, end_time = action_triple.split(' ')
+                        onehot_action_label = one_hot(self.class_index_dict[actionclass], self.NUM_CLASSES)
+                        tmp = (path_to_vidfile, onehot_action_label, float(begin_time), float(end_time))
+                        self.training_vidpath_label_tuples.append(tmp)
+        self.training_vidpath_label_tuples = [self.training_vidpath_label_tuples]  # only one split!
+        
+    
+    def set_test_tuples(self):
+        # Not supported! Evaluation on charades is handled externally!
+        pass
+        
             
 if __name__ == "__main__":
     import time
-    prov = UCF101Provider(40)
+    prov = CharadesProvider()
+    
     # prov.current_batch = 200
     # for i in range(300):
     #     before = time.time()
@@ -199,8 +247,9 @@ if __name__ == "__main__":
     #     print('Took', time.time() - before)
     #     if epoch_ended:
     #         break
-    print(len(prov.test_vidpath_label_tuples[prov.current_split]))
-    prov.current_test_video = 3780
-    for i in range(6):
-        clips, onehot_label, test_ended = prov.get_next_test_video_clips()
-        print(prov.current_test_video, test_ended)
+    
+    # print(len(prov.test_vidpath_label_tuples[prov.current_split]))
+    # prov.current_test_video = 3780
+    # for i in range(6):
+    #     clips, onehot_label, test_ended = prov.get_next_test_video_clips()
+    #     print(prov.current_test_video, test_ended)
