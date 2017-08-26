@@ -9,6 +9,7 @@ import ipdb as pdb
 from tensorflow.python.client import timeline
 from TimeLiner import TimeLiner
 from DataProvider import UCF101Provider
+from DataProvider import CharadesProvider
 from EnqueueThread import EnqueueThread
 import sys
 
@@ -18,18 +19,20 @@ now = datetime.utcnow().strftime("%Y%m%d%H%M%S")
 root_logdir = "tf_logs"
 root_ckptdir = "tf_checkpoints"
 logdir = "{}/run-{}/".format(root_logdir, now)
+srcdir = logdir + 'src/'
 ckptdir = "{}/run-{}/".format(root_ckptdir, now)
 
+# Create checkpoint and tensorflow log directory
 if not os.path.exists(logdir):
     os.makedirs(logdir)
 if not os.path.exists(ckptdir):
     os.makedirs(ckptdir)
-
-TEMPORAL_DEPTH = UCF101Provider.TEMPORAL_DEPTH
-INPUT_WIDTH = UCF101Provider.INPUT_WIDTH
-INPUT_HEIGHT = UCF101Provider.INPUT_HEIGHT
-INPUT_CHANNELS = UCF101Provider.INPUT_CHANNELS
-NUM_CLASSES = UCF101Provider.NUM_CLASSES
+    
+# Save model and training sourcecode to later look up hyperparameters
+if not os.path.exists(srcdir):
+    os.makedirs(srcdir)
+os.system(r'cp ./C3Dtrain.py {}'.format(srcdir))
+os.system(r'cp ./C3Dmodel.py {}'.format(srcdir))
 
 BATCH_SIZE = 2
 NUM_GPUS = 1
@@ -37,10 +40,16 @@ NUM_DATA_THREADS = 4
 GPU_QUEUES_CAPACITY = 10
 assert(BATCH_SIZE % NUM_GPUS == 0)
 EXAMPLES_PER_GPU = int(BATCH_SIZE / NUM_GPUS)
-LEARNING_RATE = 1e-03
+LEARNING_RATE = 1e-04
 
 WRITE_TIMELINE = False
 
+data_provider = CharadesProvider(BATCH_SIZE)
+TEMPORAL_DEPTH = data_provider.TEMPORAL_DEPTH
+INPUT_WIDTH = data_provider.INPUT_WIDTH
+INPUT_HEIGHT = data_provider.INPUT_HEIGHT
+INPUT_CHANNELS = data_provider.INPUT_CHANNELS
+NUM_CLASSES = data_provider.NUM_CLASSES
 
 def queue_input_placeholders():
     # TODO: Test with variable BATCH_SIZE
@@ -155,7 +164,6 @@ def run_training():
         starttime = time.time()
 
         EPOCHS = 1000
-        data_provider = UCF101Provider(BATCH_SIZE)
         enqueue_threads = [EnqueueThread(data_provider, my_graph, sess, NUM_GPUS, EXAMPLES_PER_GPU)
             for _ in range(NUM_DATA_THREADS)]
         for t in enqueue_threads:

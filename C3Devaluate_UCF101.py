@@ -43,11 +43,12 @@ with tf.Session() as sess:
         vid = 0
         confusion_matrix = np.zeros((NUM_CLASSES, NUM_CLASSES))
         while not test_ended:
+            before = time.time()
             test_clips, label, test_ended = data_provider.get_next_test_video_clips()
             test_clips = test_clips[::OFFSET]
+            num_clips = len(test_clips)
             test_clips = np.array_split(test_clips, math.ceil(len(test_clips) / MAX_INPUT_LENGTH))
             vid += 1
-            before = time.time()
             outputs = []
             for split in test_clips:
                 feed_dict = {input_placeholder : split, onehot_label_placeholder : label}
@@ -58,8 +59,11 @@ with tf.Session() as sess:
             true_label = np.argmax(label)
             predicted_label = np.argmax(mean_prediction)
             confusion_matrix[true_label, predicted_label] += 1
-            break
-        np.save(CKPT + '/confusion_matrices/model-{}-confmatrix.npy'.format(model_indx), confusion_matrix)
+            print('Model {} - Video {} - Frames {} - Took {}'.format(model_indx, vid, num_clips, time.time() - before))
+        path = CKPT + '/confusion_matrices/model-{}-confmatrix.npy'.format(model_indx)
+        np.save(path, confusion_matrix)
+        print('Finished evaluating model {}'.format(model_indx))
+        print('Confusion matrix saved to {}'.format(path))
         # print(vid, i, ' - ', np.argmax(softmax), np.argmax(label), "    took: " + str(time.time() - before))
         # print(network_output[0].argsort()[-5:][::-1], np.argmax(label))
         # print(np.where(network_output[0].argsort()[::-1] == 0)[0][0], np.argmax(label))

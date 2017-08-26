@@ -47,9 +47,13 @@ class GenericDataProvider(ABC):
         self.epochs_finished = 0
         self.current_test_video = 0
         
-    def __create_crops_from_video(self, filename, num_crops=1):
-        video_array = open_video(filename, self.SAMPLING_WIDTH, self.SAMPLING_HEIGHT)
+    def __create_crops_from_video(self, vidfile_dict, num_crops=1):
+        video_array = open_video(presampling_depth=self.TEMPORAL_DEPTH, **vidfile_dict)
+        # video_array = open_video(presampling_depth=None, **vidfile_dict)
+        
         num_video_frames = video_array.shape[0]
+        video_height = video_array.shape[1]
+        video_width = video_array.shape[2]
         
         if num_video_frames < self.TEMPORAL_DEPTH:
             num_repeat_ops = int(self.TEMPORAL_DEPTH / num_video_frames)
@@ -64,18 +68,18 @@ class GenericDataProvider(ABC):
             dtype=np.uint8)
         
         for i in range(num_crops):
-            start_frame = np.random.randint(num_video_frames - self.TEMPORAL_DEPTH)
+            start_frame = random.randint(0, num_video_frames - self.TEMPORAL_DEPTH)
             end_frame = start_frame + self.TEMPORAL_DEPTH
-            start_width = np.random.randint(self.SAMPLING_WIDTH - self.INPUT_WIDTH)
+            start_width = random.randint(0, video_width - self.INPUT_WIDTH)
             end_width = start_width + self.INPUT_WIDTH
-            start_height = np.random.randint(self.SAMPLING_HEIGHT - self.INPUT_HEIGHT)
+            start_height = random.randint(0, video_height - self.INPUT_HEIGHT)
             end_height = start_height + self.INPUT_HEIGHT
             crops[i, :, :, :, :] = video_array[start_frame:end_frame, start_height:end_height, start_width:end_width, :]
             
             if not crops[i, :, :, :, :].any():
                 print("(EE) --- empty crops!!!")
                 print(start_frame, end_frame, video_array.shape)
-                input()
+                # input()
         return crops
         
     def get_next_training_batch(self, lock):
@@ -94,8 +98,8 @@ class GenericDataProvider(ABC):
         if end <= len(tuples):
             lock.release()
             for i in range(self.batch_size):
-                path_to_vidfile, onehot_label = tuples[start + i]
-                batch[i, :, :, :, :] = self.__create_crops_from_video(path_to_vidfile)
+                vidfile_dict, onehot_label = tuples[start + i]
+                batch[i, :, :, :, :] = self.__create_crops_from_video(vidfile_dict)
                 labels[i, :] = onehot_label
             epoch_ended = False
         else:
@@ -105,8 +109,8 @@ class GenericDataProvider(ABC):
                     indx = start + i
                 else:
                     indx = np.random.randint(len(tuples))
-                path_to_vidfile, onehot_label = tuples[indx]
-                batch[i, :, :, :, :] = self.__create_crops_from_video(path_to_vidfile)
+                vidfile_dict, onehot_label = tuples[indx]
+                batch[i, :, :, :, :] = self.__create_crops_from_video(vidfile_dict)
                 labels[i, :] = onehot_label
             random.shuffle(tuples)
             epoch_ended = True
@@ -118,18 +122,21 @@ class GenericDataProvider(ABC):
     
     def get_next_test_video_clips(self):
         tuples = self.test_vidpath_label_tuples[self.current_split]
-        path_to_vidfile, onehot_label = tuples[self.current_test_video]
-        video_array = open_video(path_to_vidfile, self.SAMPLING_WIDTH, self.SAMPLING_HEIGHT)
+        vidfile_dict, onehot_label = tuples[self.current_test_video]
+        video_array = open_video(**vidfile_dict)
         num_video_frames = video_array.shape[0]
+        video_height = video_array.shape[1]
+        video_width = video_array.shape[2]
         num_clips = num_video_frames - self.TEMPORAL_DEPTH + 1
         clips = np.zeros((num_clips, self.TEMPORAL_DEPTH, self.INPUT_HEIGHT, self.INPUT_WIDTH, self.INPUT_CHANNELS))
         
+        # Get all center crop clips from the video
         y_offset = int(self.INPUT_HEIGHT / 2)
         x_offset = int(self.INPUT_WIDTH / 2)
-        y_start = int(self.SAMPLING_HEIGHT / 2) - y_offset
-        y_end = int(self.SAMPLING_HEIGHT / 2) + y_offset
-        x_start = int(self.SAMPLING_WIDTH / 2) - x_offset
-        x_end = int(self.SAMPLING_WIDTH / 2) + x_offset
+        y_start = int(video_height / 2) - y_offset
+        y_end = int(video_height / 2) + y_offset
+        x_start = int(video_width / 2) - x_offset
+        x_end = int(video_width / 2) + x_offset
         
         for i in range(num_clips):
             clips[i] = video_array[i:i+self.TEMPORAL_DEPTH, y_start:y_end, x_start:x_end, :]
@@ -155,13 +162,19 @@ class UCF101Provider(GenericDataProvider):
         super().__init__(batch_size, debug_mode, current_split)
         
     def set_training_tuples(self):
+        def dict_label_tuple_from_string(actionstr):
+            path_end, class_str = actionstr.split(' ')
+            dict = {'filename' : self.basedir + '/' + path_end,
+                    'size': (self.SAMPLING_WIDTH, self.SAMPLING_HEIGHT)}
+            # 1 has to be subtracted from class index, because datasets starts enumerating action classes at 1
+            onehot_label = one_hot(int(class_str) -1, self.NUM_CLASSES)
+            return (dict, onehot_label)
+            
         for i in range(self.num_splits):
             with open(self.basedir + '/ucfTrainTestlist' + '/trainlist0{}.txt'.format(i + 1)) as file:
                 tuples = file.read().splitlines()
-                tuples = map(lambda s: s.split(' '), tuples)
-                # 1 has to be subtracted from class index, because datasets starts enumerating action classes at 1
-                tuples = list(map(lambda s: (self.basedir + '/' + s[0], one_hot(int(s[1]) - 1, self.NUM_CLASSES)), tuples))
-                random.shuffle(tuples)
+            tuples = list(map(dict_label_tuple_from_string, tuples))
+            random.shuffle(tuples)
             self.training_vidpath_label_tuples.append(tuples)
     
     def set_test_tuples(self):
@@ -172,11 +185,18 @@ class UCF101Provider(GenericDataProvider):
         for indx, classstring in classes:
             class_index_dict[classstring] = int(indx) - 1
             
+        def dict_label_tuple_from_string(actionstr):
+            foldername, filename = actionstr.split('/')
+            dict = {'filename' : self.basedir + '/' + actionstr,
+                    'size' : (self.SAMPLING_WIDTH, self.SAMPLING_HEIGHT)}
+            onehot_label = one_hot(class_index_dict[foldername], self.NUM_CLASSES)
+            return (dict, onehot_label)
+        
         for i in range(self.num_splits):
             with open(self.basedir + '/ucfTrainTestlist' + '/testlist0{}.txt'.format(i + 1)) as file:
                 tuples = file.read().splitlines()
-            tuples = map(lambda s: s.split('/'), tuples)
-            tuples = list(map(lambda s: (self.basedir + '/' + s[0] + '/' + s[1], one_hot(class_index_dict[s[0]], self.NUM_CLASSES)), tuples))
+            # tuples = map(lambda s: s.split('/'), tuples)
+            tuples = list(map(dict_label_tuple_from_string, tuples))
             self.test_vidpath_label_tuples.append(tuples)
     
     
@@ -204,8 +224,10 @@ class CharadesProvider(GenericDataProvider):
         super().__init__(batch_size, debug_mode, current_split=0)
         
         
-    def set_training_tuples(self):
-        path_to_charades_train_file = self.base_dir + '/charades_meta/Charades_v1_train.csv'
+    def __fill_list_from_file(self, list, file):
+        SMALLEST_INPUT_LENGTH = min(self.INPUT_HEIGHT, self.INPUT_WIDTH)
+    
+        path_to_charades_train_file = self.base_dir + file
         with open(path_to_charades_train_file) as csvfile:
             reader = csv.reader(csvfile, delimiter=',')
             headerline = next(reader)
@@ -214,23 +236,39 @@ class CharadesProvider(GenericDataProvider):
                 id = row[id_indx]
                 actions = row[action_indx]
                 if len(actions) > 0:  # some videos are not annotated with action classes and temporal intervals, skip!
-                    path_to_vidfile = self.base_dir + '/charades_v1_480/{}.mp4'.format(id)
+                    path_to_vidfile = self.base_dir + '/Charades_v1_480/{}.mp4'.format(id)
                     for action_triple in actions.split(';'):
                         actionclass, begin_time, end_time = action_triple.split(' ')
                         onehot_action_label = one_hot(self.class_index_dict[actionclass], self.NUM_CLASSES)
-                        tmp = (path_to_vidfile, onehot_action_label, float(begin_time), float(end_time))
-                        self.training_vidpath_label_tuples.append(tmp)
-        self.training_vidpath_label_tuples = [self.training_vidpath_label_tuples]  # only one split!
-        
+                        tmp = ({'filename' : path_to_vidfile,
+                                'size' : SMALLEST_INPUT_LENGTH,
+                                'interval' : (float(begin_time), float(end_time))},
+                               onehot_action_label)
+                        list.append(tmp)
+
+    def set_training_tuples(self):
+        self.__fill_list_from_file(self.training_vidpath_label_tuples, '/charades_meta/Charades_v1_train.csv')
+        random.shuffle(self.training_vidpath_label_tuples)
+        self.training_vidpath_label_tuples = [self.training_vidpath_label_tuples]
     
     def set_test_tuples(self):
-        # Not supported! Evaluation on charades is handled externally!
-        pass
+        self.__fill_list_from_file(self.test_vidpath_label_tuples, '/charades_meta/Charades_v1_test.csv')
+        self.test_vidpath_label_tuples = [self.test_vidpath_label_tuples]
         
             
 if __name__ == "__main__":
     import time
+    import threading
+    # prov = UCF101Provider()
     prov = CharadesProvider()
+    lock = threading.Lock()
+    begin = 1499
+    prov.current_batch = begin
+    for i in range(begin, 3000):
+        before = time.time()
+        # batch = prov.get_next_training_batch(lock)
+        clips = prov.get_next_training_batch(lock)
+        print(i, 'Batch ready! Took', time.time() - before)
     
     # prov.current_batch = 200
     # for i in range(300):

@@ -4,32 +4,86 @@ import numpy as np
 import time
 import matplotlib.pyplot as plt
 import itertools
+import random
 
 
-def open_video(video_file, desired_width, desired_height):
-    video = cv2.VideoCapture(video_file)
+def open_video(filename, size, interval=None, presampling_depth=None):
+    video = cv2.VideoCapture(filename)
     video.set(cv2.CAP_PROP_CONVERT_RGB, True)
-
-    max_frames = int(video.get(cv2.CAP_PROP_FRAME_COUNT))
-    # frame_width = int(video.get(cv2.CAP_PROP_FRAME_WIDTH))
-    # frame_height = int(video.get(cv2.CAP_PROP_FRAME_HEIGHT))
     
-    frame_matrix = np.zeros((max_frames, desired_height, desired_width, 3), dtype=np.uint8)
-    run = True
-    while run:
-        frame_index = int(video.get(cv2.CAP_PROP_POS_FRAMES))
-        run, frame = video.read()
-        
-        # try to redo once if loading was unsuccessful:
-        if not run and frame_index < max_frames:
-            video.set(cv2.CAP_PROP_POS_FRAMES, frame_index)
-            run, frame = video.read()
-        if run:
-            frame_matrix[frame_index, :, :, :] = cv2.resize(frame, (desired_width, desired_height))
-            
-    # cut off if some frames could not be read
-    if frame_index < max_frames:
-        frame_matrix = frame_matrix[:frame_index, :, :, :]
+    if type(size) == tuple:
+        desired_width = size[0]
+        desired_height = size[1]
+    elif type(size) == int:
+        video_width = int(video.get(cv2.CAP_PROP_FRAME_WIDTH))
+        video_height = int(video.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        resize_factor = size / min(video_width, video_height)
+        desired_width = int(np.round(video_width * resize_factor))
+        desired_height = int(np.round(video_height * resize_factor))
+    else:
+        print('ERROR videotools.open_video: Wrong value for argument "size"')
+        return
+
+    repeat = True
+    while repeat:
+        if interval is not None:
+            fps = video.get(cv2.CAP_PROP_FPS)
+            start_frame = int(interval[0] * fps)
+            end_frame = int(interval[1] * fps)
+            max_frames = int(video.get(cv2.CAP_PROP_FRAME_COUNT))
+            if end_frame > max_frames:
+                end_frame = max_frames
+            # print(filename)
+            # print(interval)
+            # print('fps', fps)
+            # print(start_frame, end_frame)
+        else:
+            start_frame = 0
+            end_frame = int(video.get(cv2.CAP_PROP_FRAME_COUNT))
+        if presampling_depth is not None:
+            # presample between previously determined interval (start_frame, end_frame),
+            # to speed up reading of the video. Only reads what is actually needed.
+            start_frame = random.randint(start_frame, end_frame - presampling_depth)
+            # start_frame = end_frame - presampling_depth
+            end_frame = start_frame + presampling_depth
+    
+        num_frames = end_frame - start_frame
+        frame_matrix = np.zeros((num_frames, desired_height, desired_width, 3), dtype=np.uint8)
+        video.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
+    
+        for i in range(num_frames):
+            success, frame = video.read()
+            if not success:
+                # try to redo once if loading was unsuccessful:
+                video.set(cv2.CAP_PROP_POS_FRAMES, start_frame + i)
+                success, frame = video.read()
+                if success:
+                    print('RECOVERING WORKED!!!')
+                else:
+                    print('RECOVERING DID NOT WORK!!!', start_frame, end_frame, i)
+                    print('breakpoint')
+            if success:
+                frame_matrix[i, :, :, :] = cv2.resize(frame, (desired_width, desired_height))
+            else:
+                print('breaking')
+                break
+                
+        if not success and presampling_depth is None:
+            # not all frames from video could be read, but there are enough
+            # cut off zero-frames in frame matrix and return
+            frame_matrix = frame_matrix[:i, :, :, :]
+            repeat = False
+        elif success:
+            # all frames could be read, our work here is done.
+            repeat = False
+        elif not success and presampling_depth is not None:
+            # we need to repeat, because not all needed frames could be obtained
+            print("REPEATED!!!!")
+            repeat = True
+        else:
+            # DEBUG case, this should never happen:
+            print("IT HAPPENED!!!")
+    
     video.release()
     return frame_matrix
 
@@ -95,10 +149,12 @@ def plot_confusion_matrix(cm, classes,
 
 
 if __name__ == '__main__':
-    file_list = ['UCF-101'+'/'+foldername + '/' + filename for
-                 foldername in os.listdir('UCF-101') for
-                 filename in os.listdir('UCF-101/'+foldername)]
-    for i in range(100):
+    file_list = ['./datasets/UCF-101'+'/'+foldername + '/' + filename for
+                 foldername in os.listdir('./datasets/UCF-101') for
+                 filename in os.listdir('./datasets/UCF-101/'+foldername)]
+    # path = './datasets/charades/Charades_v1_480'
+    # file_list = [path + '/' + filename for filename in os.listdir(path)]
+    for i in range(500):
         before = time.time()
-        arr = open_video(file_list[i], 160, 120)
+        arr = open_video(file_list[i], (160, 120))
         print("took {}".format(time.time() - before))
