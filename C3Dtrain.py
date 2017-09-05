@@ -33,6 +33,8 @@ if not os.path.exists(srcdir):
     os.makedirs(srcdir)
 os.system(r'cp ./C3Dtrain.py {}'.format(srcdir))
 os.system(r'cp ./C3Dmodel.py {}'.format(srcdir))
+os.system(r'cp ./DataProvider.py {}'.format(srcdir))
+os.system(r'cp ./videotools.py {}'.format(srcdir))
 
 BATCH_SIZE = 2
 NUM_GPUS = 1
@@ -40,11 +42,11 @@ NUM_DATA_THREADS = 4
 GPU_QUEUES_CAPACITY = 10
 assert(BATCH_SIZE % NUM_GPUS == 0)
 EXAMPLES_PER_GPU = int(BATCH_SIZE / NUM_GPUS)
-LEARNING_RATE = 1e-04
+LEARNING_RATE = 1e-05
 
 WRITE_TIMELINE = False
 
-data_provider = CharadesProvider(BATCH_SIZE)
+data_provider = CharadesProvider(BATCH_SIZE, tov_pretraining=True)
 TEMPORAL_DEPTH = data_provider.TEMPORAL_DEPTH
 INPUT_WIDTH = data_provider.INPUT_WIDTH
 INPUT_HEIGHT = data_provider.INPUT_HEIGHT

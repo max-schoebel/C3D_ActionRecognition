@@ -88,6 +88,35 @@ def open_video(filename, size, interval=None, presampling_depth=None):
     return frame_matrix
 
 
+def permute_clip(clip, num_fragments=3):
+    """
+    :param clip: input np.array representing a video clip with shape (1, temp_depth, height, width, channels)
+    :param num_fragments: number of slices
+    :return: permuted clip
+    """
+    splits = np.array_split(clip, num_fragments, axis=1)
+    perm = np.random.permutation(num_fragments)
+    while np.array_equal(perm ,[0,1,2]) or np.array_equal(perm, [2,1,0]):
+        perm = np.random.permutation(num_fragments)
+    splits = [splits[i] for i in perm]
+    splits = np.concatenate(splits, axis=1)
+    return splits
+
+
+def enough_motion_present(clip, num_fragments=3):
+    splits = np.array_split(clip, num_fragments, axis=1)
+    means = [np.mean(s, axis=1) for s in splits]
+    height, width = clip.shape[2], clip.shape[3]
+    dists = [np.linalg.norm(means[i] - means[i+1])/(width * height) for i in range(len(means) -1)]
+    # print(dists)
+    if np.sum(dists) > 0.4:
+        # print('yes', np.sum(dists))
+        return True
+    else:
+        # print('no', np.sum(dists))
+        return False
+
+
 def one_hot(index, num_classes):
     encoding = np.zeros(num_classes, dtype=np.float32)
     encoding[index] = 1
@@ -111,6 +140,7 @@ def are_equal(dataprovider_batches, extracted_batches, batch_size):
     c = np.array_equal(ip_labels[0:bhalf], tf_labels1)
     d = np.array_equal(ip_labels[bhalf:batch_size], tf_labels2)
     return a and b and c and d
+
 
 def plot_confusion_matrix(cm, classes,
                           normalize=False,
@@ -146,15 +176,27 @@ def plot_confusion_matrix(cm, classes,
     plt.tight_layout()
     plt.ylabel('True label')
     plt.xlabel('Predicted label')
-
+    
+    
+    def __time_test():
+        file_list = ['./datasets/UCF-101'+'/'+foldername + '/' + filename for
+                     foldername in os.listdir('./datasets/UCF-101') for
+                     filename in os.listdir('./datasets/UCF-101/'+foldername)]
+        # path = './datasets/charades/Charades_v1_480'
+        # file_list = [path + '/' + filename for filename in os.listdir(path)]
+        for i in range(500):
+            before = time.time()
+            arr = open_video(file_list[i], (160, 120))
+            print("took {}".format(time.time() - before))
+    
 
 if __name__ == '__main__':
-    file_list = ['./datasets/UCF-101'+'/'+foldername + '/' + filename for
-                 foldername in os.listdir('./datasets/UCF-101') for
-                 filename in os.listdir('./datasets/UCF-101/'+foldername)]
-    # path = './datasets/charades/Charades_v1_480'
-    # file_list = [path + '/' + filename for filename in os.listdir(path)]
-    for i in range(500):
-        before = time.time()
-        arr = open_video(file_list[i], (160, 120))
-        print("took {}".format(time.time() - before))
+    from DataProvider import CharadesProvider
+    import threading
+    prov = CharadesProvider()
+    lock = threading.Lock()
+    
+    clips = prov.get_next_training_batch(lock)
+    for clip in clips[0]:
+       if enough_motion_present(clip[np.newaxis]):
+           play_clip(clip.astype(np.uint8))

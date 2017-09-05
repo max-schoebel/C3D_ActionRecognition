@@ -1,24 +1,26 @@
 from abc import ABC, abstractmethod
 import numpy as np
 import random
-from videotools import open_video, one_hot
+from videotools import open_video, one_hot, enough_motion_present, permute_clip
 import csv
 
 
 class GenericDataProvider(ABC):
     TEMPORAL_DEPTH = 16
     INPUT_CHANNELS = 3
-    NUM_CLASSES = 101
     INPUT_WIDTH = 112
     INPUT_HEIGHT = 112
 
-    def __init__(self, batch_size, debug_mode, current_split):
+    def __init__(self, batch_size, tov_pretraining, debug_mode, current_split):
         """
         videofile_label_tuples... list of self.num_splits lists containing tuples
             of format (path_to_filename, onehot_encoded_label)
         """
         self.batch_size = batch_size
         self.debug_mode = debug_mode
+        self.tov_pretraining = tov_pretraining
+        if tov_pretraining:
+            self.NUM_CLASSES = 2
 
         self.current_batch = 0
         self.current_test_video = 0
@@ -86,7 +88,10 @@ class GenericDataProvider(ABC):
         batch = np.zeros(
             (self.batch_size, self.TEMPORAL_DEPTH, self.INPUT_HEIGHT, self.INPUT_WIDTH, self.INPUT_CHANNELS),
             dtype=np.float32)
-        labels = np.zeros((self.batch_size, self.NUM_CLASSES), dtype=np.float32)
+        if self.tov_pretraining:
+            labels = np.zeros((self.batch_size, 2))
+        else:
+            labels = np.zeros((self.batch_size, self.NUM_CLASSES), dtype=np.float32)
 
         tuples = self.training_vidpath_label_tuples[self.current_split]
         
@@ -98,9 +103,23 @@ class GenericDataProvider(ABC):
         if end <= len(tuples):
             lock.release()
             for i in range(self.batch_size):
-                vidfile_dict, onehot_label = tuples[start + i]
-                batch[i, :, :, :, :] = self.__create_crops_from_video(vidfile_dict)
-                labels[i, :] = onehot_label
+                vidfile_dict, action_label = tuples[start + i]
+                if self.tov_pretraining:
+                    clip = self.__create_crops_from_video(vidfile_dict)
+                    count = 0
+                    while not enough_motion_present(clip) and count <= 10:
+                        clip = self.__create_crops_from_video(vidfile_dict)
+                        count += 1
+                    permute = np.random.rand() > 0.20
+                    if not enough_motion_present(clip):
+                        permute = False
+                    if permute:
+                        clip = permute_clip(clip)
+                    batch[i, :, :, :, :] = clip
+                    labels[i] = one_hot(int(permute), 2)
+                else:
+                    batch[i, :, :, :, :] = self.__create_crops_from_video(vidfile_dict)
+                    labels[i, :] = one_hot(action_label, self.NUM_CLASSES)
             epoch_ended = False
         else:
             # pad last returned batch with crops from random videos
@@ -109,9 +128,23 @@ class GenericDataProvider(ABC):
                     indx = start + i
                 else:
                     indx = np.random.randint(len(tuples))
-                vidfile_dict, onehot_label = tuples[indx]
-                batch[i, :, :, :, :] = self.__create_crops_from_video(vidfile_dict)
-                labels[i, :] = onehot_label
+                vidfile_dict, action_label = tuples[indx]
+                if self.tov_pretraining:
+                    clip = self.__create_crops_from_video(vidfile_dict)
+                    count = 0
+                    while not enough_motion_present(clip) and count <= 10:
+                        clip = self.__create_crops_from_video(vidfile_dict)
+                        count += 1
+                    permute = np.random.rand() > 0.20
+                    if not enough_motion_present(clip):
+                        permute = False
+                    if permute:
+                        clip = permute_clip(clip)
+                    batch[i, :, :, :, :] = clip
+                    labels[i] = one_hot(int(permute), 2)
+                else:
+                    batch[i, :, :, :, :] = self.__create_crops_from_video(vidfile_dict)
+                    labels[i, :] = one_hot(action_label, self.NUM_CLASSES)
             random.shuffle(tuples)
             epoch_ended = True
             self.current_batch = 0
@@ -121,8 +154,11 @@ class GenericDataProvider(ABC):
         return batch, labels, epoch_ended
     
     def get_next_test_video_clips(self):
+        if self.tov_pretraining:
+            print("ERROR Testing tov testing not supported")
+            return
         tuples = self.test_vidpath_label_tuples[self.current_split]
-        vidfile_dict, onehot_label = tuples[self.current_test_video]
+        vidfile_dict, action_index = tuples[self.current_test_video]
         video_array = open_video(**vidfile_dict)
         num_video_frames = video_array.shape[0]
         video_height = video_array.shape[1]
@@ -148,18 +184,17 @@ class GenericDataProvider(ABC):
         else:
             self.current_test_video += 1
             test_ended = False
-        return clips, onehot_label, test_ended
+        return clips, one_hot(action_index, self.NUM_CLASSES), test_ended
 
 
 class UCF101Provider(GenericDataProvider):
-    SAMPLING_WIDTH = 160
-    SAMPLING_HEIGHT = 120
-    NUM_CLASSES = 101
-    
-    def __init__(self, batch_size=40, debug_mode=False, current_split=0):
+    def __init__(self, batch_size=40, tov_pretraining=False, debug_mode=False, current_split=0):
+        self.SAMPLING_WIDTH = 160
+        self.SAMPLING_HEIGHT = 120
+        self.NUM_CLASSES = 101
         self.num_splits = 3
         self.basedir = './datasets/UCF-101'
-        super().__init__(batch_size, debug_mode, current_split)
+        super().__init__(batch_size, tov_pretraining, debug_mode, current_split)
         
     def set_training_tuples(self):
         def dict_label_tuple_from_string(actionstr):
@@ -167,8 +202,8 @@ class UCF101Provider(GenericDataProvider):
             dict = {'filename' : self.basedir + '/' + path_end,
                     'size': (self.SAMPLING_WIDTH, self.SAMPLING_HEIGHT)}
             # 1 has to be subtracted from class index, because datasets starts enumerating action classes at 1
-            onehot_label = one_hot(int(class_str) -1, self.NUM_CLASSES)
-            return (dict, onehot_label)
+            action_index = int(class_str) -1
+            return (dict, action_index)
             
         for i in range(self.num_splits):
             with open(self.basedir + '/ucfTrainTestlist' + '/trainlist0{}.txt'.format(i + 1)) as file:
@@ -189,8 +224,8 @@ class UCF101Provider(GenericDataProvider):
             foldername, filename = actionstr.split('/')
             dict = {'filename' : self.basedir + '/' + actionstr,
                     'size' : (self.SAMPLING_WIDTH, self.SAMPLING_HEIGHT)}
-            onehot_label = one_hot(class_index_dict[foldername], self.NUM_CLASSES)
-            return (dict, onehot_label)
+            action_index = class_index_dict[foldername]
+            return (dict, action_index)
         
         for i in range(self.num_splits):
             with open(self.basedir + '/ucfTrainTestlist' + '/testlist0{}.txt'.format(i + 1)) as file:
@@ -203,16 +238,15 @@ class UCF101Provider(GenericDataProvider):
 class CharadesProvider(GenericDataProvider):
     """
     Provider of the charades dataset.
-    NOTE: vidfile_label_tuples needs to contain tuples of format (path_to_vidfile, onehot_action_label, begin_time, end_time) now
+    NOTE: vidfile_label_tuples needs to contain tuples of format (path_to_vidfile, onehot_action_label, begin_time, end_time)
         since the videos in charades dataset contain multiple actions now!!!
     """
-    SAMPLING_WIDTH = None
-    SAMPLING_HEIGHT = None
-    NUM_CLASSES = 157
-    
-    def __init__(self, batch_size=40, debug_mode=False):
+    def __init__(self, batch_size=40, tov_pretraining=False, debug_mode=False):
         self.num_splits = 1
         self.base_dir = './datasets/charades'
+        self.NUM_CLASSES = 157  # can be overwritten in base-class constructor according to tov_pretraining
+        self.SAMPLING_WIDTH = None
+        self.SAMPLING_HEIGHT = None
         with open(self.base_dir + '/charades_meta/Charades_v1_classes.txt') as file:
             classstrings = file.read().splitlines()
         self.class_index_dict = {}
@@ -221,7 +255,7 @@ class CharadesProvider(GenericDataProvider):
             split = classstrings[i].split(' ', 1)
             self.class_index_dict[split[0]] = i
             self.class_text_dict[split[0]] = split[1]
-        super().__init__(batch_size, debug_mode, current_split=0)
+        super().__init__(batch_size, tov_pretraining, debug_mode, current_split=0)
         
         
     def __fill_list_from_file(self, list, file):
@@ -239,11 +273,11 @@ class CharadesProvider(GenericDataProvider):
                     path_to_vidfile = self.base_dir + '/Charades_v1_480/{}.mp4'.format(id)
                     for action_triple in actions.split(';'):
                         actionclass, begin_time, end_time = action_triple.split(' ')
-                        onehot_action_label = one_hot(self.class_index_dict[actionclass], self.NUM_CLASSES)
+                        action_index = self.class_index_dict[actionclass]
                         tmp = ({'filename' : path_to_vidfile,
                                 'size' : SMALLEST_INPUT_LENGTH,
                                 'interval' : (float(begin_time), float(end_time))},
-                               onehot_action_label)
+                               action_index)
                         list.append(tmp)
 
     def set_training_tuples(self):
@@ -259,15 +293,17 @@ class CharadesProvider(GenericDataProvider):
 if __name__ == "__main__":
     import time
     import threading
+    from videotools import play_clip
     # prov = UCF101Provider()
-    prov = CharadesProvider()
+    prov = UCF101Provider(tov_pretraining=True)
+    # prov.current_batch = 1240
+    prov.current_batch = 200
     lock = threading.Lock()
-    begin = 1499
-    prov.current_batch = begin
-    for i in range(begin, 3000):
+    for i in range(20):
         before = time.time()
-        # batch = prov.get_next_training_batch(lock)
-        clips = prov.get_next_training_batch(lock)
+        batch = prov.get_next_training_batch(lock)
+        print(np.mean(batch[1], axis=0))
+        print(batch[2])
         print(i, 'Batch ready! Took', time.time() - before)
     
     # prov.current_batch = 200
