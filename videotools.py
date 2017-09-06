@@ -47,6 +47,8 @@ def open_video(filename, size, interval=None, presampling_depth=None):
             # start_frame = end_frame - presampling_depth
             end_frame = start_frame + presampling_depth
     
+        if end_frame - start_frame < 16:
+            start_frame = end_frame -16
         num_frames = end_frame - start_frame
         frame_matrix = np.zeros((num_frames, desired_height, desired_width, 3), dtype=np.uint8)
         video.set(cv2.CAP_PROP_POS_FRAMES, start_frame)

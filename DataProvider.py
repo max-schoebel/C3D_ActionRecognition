@@ -81,6 +81,7 @@ class GenericDataProvider(ABC):
             if not crops[i, :, :, :, :].any():
                 print("(EE) --- empty crops!!!")
                 print(start_frame, end_frame, video_array.shape)
+                print(vidfile_dict)
                 # input()
         return crops
         
@@ -295,15 +296,13 @@ if __name__ == "__main__":
     import threading
     from videotools import play_clip
     # prov = UCF101Provider()
-    prov = CharadesProvider(tov_pretraining=True)
+    prov = CharadesProvider()
     # prov.current_batch = 1240
-    prov.current_batch = 200
+    prov.current_test_video = 2647
     lock = threading.Lock()
-    for i in range(20):
+    for i in range(1):
         before = time.time()
-        batch = prov.get_next_training_batch(lock)
-        print(np.mean(batch[1], axis=0))
-        print(batch[2])
+        batch = prov.get_next_test_video_clips()
         print(i, 'Batch ready! Took', time.time() - before)
     
     # prov.current_batch = 200

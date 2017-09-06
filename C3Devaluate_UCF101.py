@@ -7,6 +7,9 @@ import math
 import os
 
 data_provider = CharadesProvider()
+#
+# data_provider.current_test_video = 2648
+#
 TEMPORAL_DEPTH = data_provider.TEMPORAL_DEPTH
 INPUT_WIDTH = data_provider.INPUT_WIDTH
 INPUT_HEIGHT = data_provider.INPUT_HEIGHT
@@ -14,9 +17,9 @@ INPUT_CHANNELS = data_provider.INPUT_CHANNELS
 NUM_CLASSES = data_provider.NUM_CLASSES
 
 CKPT = os.getcwd() + "/tf_checkpoints/run-20170828082324"
-MAX_INPUT_LENGTH = 20
-EVAL_INDXS = np.arange(0,165,5)
-OFFSET = 8
+MAX_INPUT_LENGTH = 3
+EVAL_INDXS = np.arange(0,165,10)
+OFFSET = 16
 
 input_placeholder = tf.placeholder(
     tf.float32, [None, TEMPORAL_DEPTH, INPUT_HEIGHT, INPUT_WIDTH, INPUT_CHANNELS],
@@ -60,7 +63,7 @@ with tf.Session() as sess:
             true_label = np.argmax(label)
             predicted_label = np.argmax(mean_prediction)
             confusion_matrix[true_label, predicted_label] += 1
-            print('Model {} - Video {} - Frames {} - Took {}'.format(model_indx, vid+1, num_clips, time.time() - before))
+            print('Model {} - Video {} - Clips {} - Took {}'.format(model_indx, vid+1, num_clips, time.time() - before))
             vid += 1
         confmatrix_path = CKPT + '/confusion_matrices/model-{}-confmatrix.npy'.format(model_indx)
         results_path = CKPT + 'results/model-{}-results.npy'.format(model_indx)
