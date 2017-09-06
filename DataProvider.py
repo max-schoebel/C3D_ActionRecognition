@@ -295,7 +295,7 @@ if __name__ == "__main__":
     import threading
     from videotools import play_clip
     # prov = UCF101Provider()
-    prov = UCF101Provider(tov_pretraining=True)
+    prov = CharadesProvider(tov_pretraining=True)
     # prov.current_batch = 1240
     prov.current_batch = 200
     lock = threading.Lock()
