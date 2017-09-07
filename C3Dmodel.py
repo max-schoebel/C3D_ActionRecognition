@@ -1,8 +1,8 @@
 import tensorflow as tf
 from tensorflow import layers
 
-WEIGHT_DECAY = 0.01
-INIT_STDDEV = 0.01
+WEIGHT_DECAY = 1e-05
+INIT_STDDEV = 0.02
 
 def add_activation_summary(layer):
     # changes needed for multi cpu training!

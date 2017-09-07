@@ -59,15 +59,13 @@ def open_video(filename, size, interval=None, presampling_depth=None):
                 # try to redo once if loading was unsuccessful:
                 video.set(cv2.CAP_PROP_POS_FRAMES, start_frame + i)
                 success, frame = video.read()
-                if success:
-                    print('RECOVERING WORKED!!!')
-                else:
-                    print('RECOVERING DID NOT WORK!!!', start_frame, end_frame, i)
-                    print('breakpoint')
+                # if success:
+                #     print('RECOVERING WORKED!!!')
+                # else:
+                #     print('RECOVERING DID NOT WORK!!!', start_frame, end_frame, i)
             if success:
                 frame_matrix[i, :, :, :] = cv2.resize(frame, (desired_width, desired_height))
             else:
-                print('breaking')
                 break
                 
         if not success and presampling_depth is None:
@@ -80,7 +78,7 @@ def open_video(filename, size, interval=None, presampling_depth=None):
             repeat = False
         elif not success and presampling_depth is not None:
             # we need to repeat, because not all needed frames could be obtained
-            print("REPEATED!!!!")
+            # print("REPEATED!!!!")
             repeat = True
         else:
             # DEBUG case, this should never happen:
@@ -90,19 +88,31 @@ def open_video(filename, size, interval=None, presampling_depth=None):
     return frame_matrix
 
 
-def permute_clip(clip, num_fragments=3):
+def permute_clip(clip):
     """
     :param clip: input np.array representing a video clip with shape (1, temp_depth, height, width, channels)
     :param num_fragments: number of slices
     :return: permuted clip
     """
-    splits = np.array_split(clip, num_fragments, axis=1)
+    # sample number of kept beginning and end-frames between 1 and 3
+    min_keep = 1
+    max_keep = 3
+    keep_frames = np.random.randint(min_keep, max_keep+1)
+    print(keep_frames)
+    # sample number of fragments to obtain from in between the kept frames
+    num_fragments = np.random.randint(2, 6)
+    print(num_fragments)
+    splits = np.array_split(clip[:, keep_frames:-keep_frames, :, :], num_fragments, axis=1)
     perm = np.random.permutation(num_fragments)
-    while np.array_equal(perm ,[0,1,2]) or np.array_equal(perm, [2,1,0]):
+    while np.array_equal(perm ,list(range(num_fragments))) or np.array_equal(perm, reversed(list(range(num_fragments)))):
         perm = np.random.permutation(num_fragments)
     splits = [splits[i] for i in perm]
     splits = np.concatenate(splits, axis=1)
-    return splits
+    print(np.shape(splits))
+    print(np.shape(clip[:,:keep_frames,:,:]))
+    print(np.shape(clip[:,-keep_frames:,:,:]))
+    permuted_clip = np.concatenate((clip[:,:keep_frames,:,:], splits, clip[:,-keep_frames:,:,:]), axis=1)
+    return permuted_clip
 
 
 def enough_motion_present(clip, num_fragments=3):
@@ -194,11 +204,9 @@ def plot_confusion_matrix(cm, classes,
 
 if __name__ == '__main__':
     from DataProvider import CharadesProvider
-    import threading
-    prov = CharadesProvider()
-    lock = threading.Lock()
-    
-    clips = prov.get_next_training_batch(lock)
-    for clip in clips[0]:
-       if enough_motion_present(clip[np.newaxis]):
-           play_clip(clip.astype(np.uint8))
+    clip = np.zeros((1,16,20,20,3))
+    for i in range(16):
+        clip[0,i] = i
+    permuted = permute_clip(clip)
+    for clip in permuted[0]:
+        print(np.mean(clip))
