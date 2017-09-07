@@ -138,7 +138,7 @@ with my_graph.as_default(), tf.device('/cpu:0'):
                 network_output = C3Dmodel.inference(
                     data, EXAMPLES_PER_GPU, dropout_placeholder, is_training_placeholder, NUM_CLASSES,
                     collection='network_output')
-                xentropy_loss, regularization_loss = C3Dmodel.loss(network_output, labels, collection='xentropy_loss')
+                xentropy_loss, regularization_loss = C3Dmodel.loss(network_output, labels, collection='xentropy_loss', scope=scope)
                 
                 # train_step = C3Dmodel.train(xentropy_loss, 1e-04, global_step, collection='train_step')
                 grads = optimizer.compute_gradients(xentropy_loss)

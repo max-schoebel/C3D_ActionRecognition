@@ -2,6 +2,7 @@ import tensorflow as tf
 from tensorflow import layers
 
 WEIGHT_DECAY = 0.01
+INIT_STDDEV = 0.01
 
 def add_activation_summary(layer):
     # changes needed for multi cpu training!
@@ -46,7 +47,7 @@ def inference(vid_placeholder, batch_size, dropout_rate, is_training, num_classe
         return pool_out
 
     FULLY1_DIM = 8192
-    weight_init = tf.truncated_normal_initializer(0, 0.01)
+    weight_init = tf.truncated_normal_initializer(0, INIT_STDDEV)
     # weight_init = tf.contrib.layers.xavier_initializer()
     weight_dict = {
         'wconv1': model_variable('wconv1', [3, 3, 3, 3, 64], weight_init, WEIGHT_DECAY),
@@ -149,17 +150,16 @@ def inference(vid_placeholder, batch_size, dropout_rate, is_training, num_classe
     return out
     
     
-def loss(network_output, training_labels, collection):
+def loss(network_output, training_labels, collection, scope):
     cross_entropy = tf.nn.softmax_cross_entropy_with_logits(
         labels=training_labels, logits=network_output, name='xentropy_per_batch')
     mean_cross_entropy = tf.reduce_mean(cross_entropy, name='mean_xentropy')
     tf.summary.scalar('mean_cross_entropy_per_batch', mean_cross_entropy)
-    bn_regularization_losses = tf.multiply(
-        WEIGHT_DECAY, tf.add_n(tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES)))
-    total_loss = tf.add(mean_cross_entropy, bn_regularization_losses)
+    regularization_losses = tf.add_n(tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES, scope=scope))
+    total_loss = tf.add(mean_cross_entropy, regularization_losses)
     tf.summary.scalar('total_loss_with_l2_regularization', total_loss)
     tf.add_to_collection(collection, total_loss)
-    return total_loss, bn_regularization_losses
+    return total_loss, regularization_losses
 
 
 # def train(loss, learning_rate, global_step, collection):

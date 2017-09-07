@@ -160,9 +160,6 @@ class GenericDataProvider(ABC):
             return
         tuples = self.test_vidpath_label_tuples[self.current_split]
         vidfile_dict, action_index = tuples[self.current_test_video]
-        #
-        print(vidfile_dict, action_index)
-        #
         video_array = open_video(**vidfile_dict)
         num_video_frames = video_array.shape[0]
         video_height = video_array.shape[1]
