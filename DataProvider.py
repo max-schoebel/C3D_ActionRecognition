@@ -154,17 +154,21 @@ class GenericDataProvider(ABC):
             self.delivered_batches.append([batch, labels, epoch_ended])
         return batch, labels, epoch_ended
     
-    def get_next_test_video_clips(self):
+    def get_next_test_video_clips(self, offset=1):
         if self.tov_pretraining:
             print("ERROR Testing tov testing not supported")
             return
         tuples = self.test_vidpath_label_tuples[self.current_split]
         vidfile_dict, action_index = tuples[self.current_test_video]
+        #
+        print(vidfile_dict, action_index)
+        #
         video_array = open_video(**vidfile_dict)
         num_video_frames = video_array.shape[0]
         video_height = video_array.shape[1]
         video_width = video_array.shape[2]
-        num_clips = num_video_frames - self.TEMPORAL_DEPTH + 1
+        num_clips = int((num_video_frames - self.TEMPORAL_DEPTH) / offset) + 1
+        
         clips = np.zeros((num_clips, self.TEMPORAL_DEPTH, self.INPUT_HEIGHT, self.INPUT_WIDTH, self.INPUT_CHANNELS))
         
         # Get all center crop clips from the video
@@ -176,7 +180,9 @@ class GenericDataProvider(ABC):
         x_end = int(video_width / 2) + x_offset
         
         for i in range(num_clips):
-            clips[i] = video_array[i:i+self.TEMPORAL_DEPTH, y_start:y_end, x_start:x_end, :]
+            start = i * offset
+            end = start + self.TEMPORAL_DEPTH
+            clips[i] = video_array[start:end, y_start:y_end, x_start:x_end, :]
         
         if self.current_test_video == len(tuples) -1:
             # this was the last video
@@ -298,11 +304,13 @@ if __name__ == "__main__":
     # prov = UCF101Provider()
     prov = CharadesProvider()
     # prov.current_batch = 1240
-    prov.current_test_video = 2647
+    # prov.current_test_video = 2647
+    prov.current_test_video = 9750
     lock = threading.Lock()
-    for i in range(1):
+    for i in range(10):
         before = time.time()
-        batch = prov.get_next_test_video_clips()
+        batch = prov.get_next_test_video_clips(offset=16)
+        print(np.shape(batch[0]))
         print(i, 'Batch ready! Took', time.time() - before)
     
     # prov.current_batch = 200

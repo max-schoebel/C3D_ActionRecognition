@@ -48,8 +48,7 @@ with tf.Session() as sess:
         results = np.zeros((len(data_provider.training_vidpath_label_tuples[data_provider.current_split]), data_provider.NUM_CLASSES))
         while not test_ended:
             before = time.time()
-            test_clips, label, test_ended = data_provider.get_next_test_video_clips()
-            test_clips = test_clips[::OFFSET]
+            test_clips, label, test_ended = data_provider.get_next_test_video_clips(OFFSET)
             num_clips = len(test_clips)
             test_clips = np.array_split(test_clips, math.ceil(len(test_clips) / MAX_INPUT_LENGTH))
             outputs = []
