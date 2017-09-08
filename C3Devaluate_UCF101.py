@@ -64,10 +64,14 @@ with tf.Session() as sess:
             confusion_matrix[true_label, predicted_label] += 1
             print('Model {} - Video {} - Clips {} - Took {}'.format(model_indx, vid+1, num_clips, time.time() - before))
             vid += 1
-        confmatrix_path = CKPT + '/confusion_matrices/model-{}-confmatrix.npy'.format(model_indx)
-        results_path = CKPT + 'results/model-{}-results.npy'.format(model_indx)
-        np.save(confmatrix_path, confusion_matrix)
-        np.save(results_path, results)
+        confmatrix_path = CKPT + '/confusion_matrices'
+        if not os.path.exists(confmatrix_path):
+            os.makedirs(confmatrix_path)
+        results_path = CKPT + '/results'
+        if not os.path.exists(results_path):
+            os.makedirs(results_path)
+        np.save(confmatrix_path + '/model-{}-confmatrix.npy'.format(model_indx), confusion_matrix)
+        np.save(results_path + '/model-{}-confmatrix.npy'.format(model_indx), results)
         print('Finished evaluating model {}'.format(model_indx))
         print('Confusion matrix saved to {}'.format(confmatrix_path))
         # print(vid, i, ' - ', np.argmax(softmax), np.argmax(label), "    took: " + str(time.time() - before))
