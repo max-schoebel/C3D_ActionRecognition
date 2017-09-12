@@ -1,8 +1,8 @@
 import tensorflow as tf
 from tensorflow import layers
 
-WEIGHT_DECAY = 1e-05
-INIT_STDDEV = 0.02
+WEIGHT_DECAY = 1e-04
+INIT_STDDEV = 0.01
 
 def add_activation_summary(layer):
     # changes needed for multi cpu training!
@@ -80,6 +80,7 @@ def inference(vid_placeholder, batch_size, dropout_rate, is_training, num_classe
     
     with tf.variable_scope('convlayer1'):
         conv1 = conv3d(vid_placeholder, weight_dict['wconv1'](), bias_dict['bconv1'](), ('conv1', 'relu1'))
+        # conv1 = tf.Print(conv1, [tf.shape(conv1)], message='conv1', summarize=10)
         # conv1 = conv3d(vid_placeholder, weight_dict['wconv1'](), ('conv1', 'relu1', 'bn1'))
         # add_activation_summary(conv1)
         pool1 = max_pool(conv1, 1, 'pool1')
@@ -89,41 +90,53 @@ def inference(vid_placeholder, batch_size, dropout_rate, is_training, num_classe
         # print(pool1.name)     -> convlayer1/pool1:0
         # print(pool1.shape)    -> (1, 16, 56, 56, 64)
         # print(conv1.shape)    -> (1, 16, 112, 112, 64)
+        # pool1 = tf.Print(pool1, [tf.shape(pool1)], message='pool1', summarize=10)
     
     with tf.variable_scope('convlayer2'):
         # conv2 = conv3d(pool1, weight_dict['wconv2'](), ('conv2', 'relu2', 'bn2'))
         conv2 = conv3d(pool1, weight_dict['wconv2'](), bias_dict['bconv2'](), ('conv2', 'relu2'))
+        # conv2 = tf.Print(conv2, [tf.shape(conv2)], message='conv2', summarize=10)
         # add_activation_summary(conv2)
         pool2 = max_pool(conv2, 2, 'pool2')
+        # pool2 = tf.Print(pool2, [tf.shape(pool2)], message='pool2', summarize=10)
         
     with tf.variable_scope('convlayer3'):
         # conv3 = conv3d(pool2, weight_dict['wconv3a'](), ('conv3a', 'relu3a', 'bn3a'))
         conv3 = conv3d(pool2, weight_dict['wconv3a'](), bias_dict['bconv3a'](), ('conv3a', 'relu3a'))
+        # conv3 = tf.Print(conv3, [tf.shape(conv3)], message='conv3a', summarize=10)
         # add_activation_summary(conv3)
         
         # conv3 = conv3d(conv3, weight_dict['wconv3b'](), ('conv3b', 'relu3b', 'bn3b'))
         conv3 = conv3d(conv3, weight_dict['wconv3b'](), bias_dict['bconv3b'](), ('conv3b', 'relu3b'))
+        # conv3 = tf.Print(conv3, [tf.shape(conv3)], message='conv3a', summarize=10)
         # add_activation_summary(conv3)
         pool3 = max_pool(conv3, 2, 'pool3')
+        # pool3 = tf.Print(pool3, [tf.shape(pool3)], message='pool3', summarize=10)
         
     with tf.variable_scope('convlayer4'):
         # conv4 = conv3d(pool3, weight_dict['wconv4a'](), ('conv4a', 'relu4a', 'bn4a'))
         conv4 = conv3d(pool3, weight_dict['wconv4a'](), bias_dict['bconv4a'](), ('conv4a', 'relu4a'))
+        # conv4 = tf.Print(conv4, [tf.shape(conv4)], message='conv4a', summarize=10)
         # add_activation_summary(conv4)
         
         # conv4 = conv3d(conv4, weight_dict['wconv4b'](), ('conv4b', 'relu4b', 'bn4b'))
         conv4 = conv3d(conv4, weight_dict['wconv4b'](), bias_dict['bconv4b'](), ('conv4b', 'relu4b'))
+        # conv4 = tf.Print(conv4, [tf.shape(conv4)], message='conv4b', summarize=10)
         # add_activation_summary(conv4)
         pool4 = max_pool(conv4, 2, 'pool4')
+        # pool4 = tf.Print(pool4, [tf.shape(pool4)], message='pool4', summarize=10)
     
     with tf.variable_scope('convlayer5'):
         # conv5 = conv3d(pool4, weight_dict['wconv5a'](), ('conv5a', 'relu5a', 'bn5a'))
         conv5 = conv3d(pool4, weight_dict['wconv5a'](), bias_dict['bconv5a'](), ('conv5a', 'relu5a'))
+        # conv5 = tf.Print(conv5, [tf.shape(conv5)], message='conv5a', summarize=10)
         # add_activation_summary(conv5)
         # conv5 = conv3d(conv5, weight_dict['wconv5b'](), ('conv5b', 'relu5b', 'bn5b'))
         conv5 = conv3d(conv5, weight_dict['wconv5b'](), bias_dict['bconv5b'](), ('conv5b', 'relu5b'))
+        # conv5 = tf.Print(conv5, [tf.shape(conv5)], message='conv5b', summarize=10)
         # add_activation_summary(conv5)
         pool5 = max_pool(conv5, 2, 'pool5')
+        # pool5 = tf.Print(pool5, [tf.shape(pool5)], message='pool5', summarize=10)
 
     with tf.variable_scope('theFlattening'):
         pool5_flat = tf.reshape(pool5, [batch_size, FULLY1_DIM])
@@ -132,6 +145,7 @@ def inference(vid_placeholder, batch_size, dropout_rate, is_training, num_classe
         fully1 = tf.matmul(pool5_flat, weight_dict['wfully1']()) + bias_dict['bfully1']()
         # fully1 = layers.batch_normalization(fully1, 1, training=is_training, name='bn_fully1')
         fully1 = tf.nn.elu(fully1, name='relu_fully1')
+        # fully1 = tf.Print(fully1, [tf.shape(fully1)], message='fully1', summarize=10)
         # add_activation_summary(fully1)
         fully1 = tf.nn.dropout(fully1, dropout_rate)
     
@@ -139,12 +153,14 @@ def inference(vid_placeholder, batch_size, dropout_rate, is_training, num_classe
         fully2 = tf.matmul(fully1, weight_dict['wfully2']()) + bias_dict['bfully2']()
         # fully2 = layers.batch_normalization(fully2, 1, training=is_training, name='bn_fully2')
         fully2 = tf.nn.elu(fully2, name='relu_fully2')
+        # fully2 = tf.Print(fully2, [tf.shape(fully2)], message='fully2', summarize=10)
         # add_activation_summary(fully2)
         fully2 = tf.nn.dropout(fully2, dropout_rate)
         
     with tf.variable_scope('out'):
         out = tf.matmul(fully2, weight_dict['wout']()) + bias_dict['bout']()
         out = out - tf.expand_dims(tf.reduce_max(out,1),1)
+        # out = tf.Print(out, [tf.shape(out)], message='out', summarize=10)
         add_activation_summary(out)
     tf.add_to_collection(collection, out)
     return out

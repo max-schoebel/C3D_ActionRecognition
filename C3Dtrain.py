@@ -38,15 +38,17 @@ os.system(r'cp ./videotools.py {}'.format(srcdir))
 
 BATCH_SIZE = 2
 NUM_GPUS = 1
-NUM_DATA_THREADS = 4
-GPU_QUEUES_CAPACITY = 10
+NUM_DATA_THREADS = 6
+GPU_QUEUES_CAPACITY = 18
 assert(BATCH_SIZE % NUM_GPUS == 0)
 EXAMPLES_PER_GPU = int(BATCH_SIZE / NUM_GPUS)
 LEARNING_RATE = 1e-05
 
 WRITE_TIMELINE = False
 
-data_provider = CharadesProvider(BATCH_SIZE, tov_pretraining=True)
+data_provider = CharadesProvider(BATCH_SIZE, tov_pretraining=False)
+load_pretrained = True
+pretrain_model_path = './tov_pretrained_model/model-7.ckpt'
 TEMPORAL_DEPTH = data_provider.TEMPORAL_DEPTH
 INPUT_WIDTH = data_provider.INPUT_WIDTH
 INPUT_HEIGHT = data_provider.INPUT_HEIGHT
@@ -161,7 +163,10 @@ def run_training():
     with tf.Session(graph=my_graph, config=tf.ConfigProto(log_device_placement=True, allow_soft_placement=True)) as sess:
     # with tf.Session(graph=my_graph, config=tf.ConfigProto(allow_soft_placement=True)) as sess:
         assert(tf.get_default_graph() == my_graph)
-        sess.run(tf.global_variables_initializer())
+        if load_pretrained:
+            saver.restore(sess, pretrain_model_path)
+        else:
+            sess.run(tf.global_variables_initializer())
     
         starttime = time.time()
 

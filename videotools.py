@@ -98,19 +98,19 @@ def permute_clip(clip):
     min_keep = 1
     max_keep = 3
     keep_frames = np.random.randint(min_keep, max_keep+1)
-    print(keep_frames)
+    # print(keep_frames)
     # sample number of fragments to obtain from in between the kept frames
     num_fragments = np.random.randint(2, 6)
-    print(num_fragments)
+    # print(num_fragments)
     splits = np.array_split(clip[:, keep_frames:-keep_frames, :, :], num_fragments, axis=1)
     perm = np.random.permutation(num_fragments)
     while np.array_equal(perm ,list(range(num_fragments))) or np.array_equal(perm, reversed(list(range(num_fragments)))):
         perm = np.random.permutation(num_fragments)
     splits = [splits[i] for i in perm]
     splits = np.concatenate(splits, axis=1)
-    print(np.shape(splits))
-    print(np.shape(clip[:,:keep_frames,:,:]))
-    print(np.shape(clip[:,-keep_frames:,:,:]))
+    # print(np.shape(splits))
+    # print(np.shape(clip[:,:keep_frames,:,:]))
+    # print(np.shape(clip[:,-keep_frames:,:,:]))
     permuted_clip = np.concatenate((clip[:,:keep_frames,:,:], splits, clip[:,-keep_frames:,:,:]), axis=1)
     return permuted_clip
 
