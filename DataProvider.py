@@ -259,6 +259,8 @@ class CharadesProvider(GenericDataProvider):
             split = classstrings[i].split(' ', 1)
             self.class_index_dict[split[0]] = i
             self.class_text_dict[split[0]] = split[1]
+        self.testIDs = []
+        self.current_test_id = 0
         super().__init__(batch_size, tov_pretraining, debug_mode, current_split=0)
         
         
@@ -272,6 +274,8 @@ class CharadesProvider(GenericDataProvider):
             id_indx, action_indx = headerline.index('id'), headerline.index('actions')
             for row in reader:
                 id = row[id_indx]
+                if 'test' in file:
+                    self.testIDs.append(id)
                 actions = row[action_indx]
                 if len(actions) > 0:  # some videos are not annotated with action classes and temporal intervals, skip!
                     path_to_vidfile = self.base_dir + '/Charades_v1_480/{}.mp4'.format(id)
@@ -292,8 +296,32 @@ class CharadesProvider(GenericDataProvider):
     def set_test_tuples(self):
         self.__fill_list_from_file(self.test_vidpath_label_tuples, '/charades_meta/Charades_v1_test.csv')
         self.test_vidpath_label_tuples = [self.test_vidpath_label_tuples]
+    
+    def get_next_test_video(self):
+        current_id = self.testIDs[self.current_test_id]
+        vidpath = self.base_dir + '/Charades_v1_480/{}.mp4'.format(current_id)
+        video_array = open_video(vidpath, min(self.INPUT_HEIGHT, self.INPUT_WIDTH))
+        video_height = video_array.shape[1]
+        video_width = video_array.shape[2]
         
-            
+        y_offset = int(self.INPUT_HEIGHT / 2)
+        x_offset = int(self.INPUT_WIDTH / 2)
+        y_start = int(video_height / 2) - y_offset
+        y_end = int(video_height / 2) + y_offset
+        x_start = int(video_width / 2) - x_offset
+        x_end = int(video_width / 2) + x_offset
+        train_video_crop = video_array[:,y_start:y_end,x_start:x_end,:]
+        
+        if self.current_test_id == len(self.testIDs) -1:
+            test_ended = True
+            self.current_test_is = 0
+        else:
+            test_ended = False
+            self.current_test_id += 1
+        
+        return train_video_crop, current_id, test_ended
+        
+        
 if __name__ == "__main__":
     import time
     import threading

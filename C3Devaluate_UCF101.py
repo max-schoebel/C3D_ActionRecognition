@@ -71,7 +71,7 @@ with tf.Session() as sess:
         if not os.path.exists(results_path):
             os.makedirs(results_path)
         np.save(confmatrix_path + '/model-{}-confmatrix.npy'.format(model_indx), confusion_matrix)
-        np.save(results_path + '/model-{}-confmatrix.npy'.format(model_indx), results)
+        np.save(results_path + '/model-{}-outputs.npy'.format(model_indx), results)
         print('Finished evaluating model {}'.format(model_indx))
         print('Confusion matrix saved to {}'.format(confmatrix_path))
         # print(vid, i, ' - ', np.argmax(softmax), np.argmax(label), "    took: " + str(time.time() - before))

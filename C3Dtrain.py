@@ -235,7 +235,7 @@ def run_training():
             # accuracy, accuracy_summary, step = sess.run([accuracy_op, accuracy_summary_op, global_step], feed_dict=test_dict)
             # writer.add_summary(accuracy_summary, step)
             # TODO: Move to tensorflow command FLAGS, i.e. to switch of logging for debug purposes
-            saver.save(sess, ckptdir + "/model-{}.ckpt".format(epoch))
+            saver.save(sess, ckptdir + "/model-{}.ckpt".format(epoch), global_step=global_step)
             if WRITE_TIMELINE:
                 tl.save('./chrome_trace')
             

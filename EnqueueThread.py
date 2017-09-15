@@ -25,7 +25,9 @@ class EnqueueThread(threading.Thread):
     def run(self):
         try:
             while not self.coord.should_stop():
+                before = time.time()
                 data, labels, epoch_ended = self.data_provider.get_next_training_batch(self.lock)
+                print('I am thread', threading.current_thread(), 'Enqueueing took', time.time() - before)
                 feed_dict = {}
                 
                 for tower_index in range(self.num_gpus):
@@ -50,8 +52,8 @@ class EnqueueThread(threading.Thread):
 
 if __name__ == '__main__':
     ### TEST CODE ###
-    import InputPipeline as ip
     from DataProvider import UCF101Provider
+    from DataProvider import CharadesProvider
     import numpy as np
     from videotools import are_equal
     import time
@@ -59,13 +61,14 @@ if __name__ == '__main__':
     BATCH_SIZE = 40
     EXAMPLES_PER_GPU = 20
     GPU_QUEUES_CAPACITY = 16
-    NUM_DATA_THREADS = 8
+    NUM_DATA_THREADS = 6
 
-    TEMPORAL_DEPTH = ip.TEMPORAL_DEPTH
-    INPUT_WIDTH = ip.INPUT_WIDTH
-    INPUT_HEIGHT = ip.INPUT_HEIGHT
-    INPUT_CHANNELS = ip.INPUT_CHANNELS
-    NUM_CLASSES = ip.NUM_CLASSES
+    data_provider = CharadesProvider(BATCH_SIZE, tov_pretraining=True)
+    TEMPORAL_DEPTH = data_provider.TEMPORAL_DEPTH
+    INPUT_WIDTH = data_provider.INPUT_WIDTH
+    INPUT_HEIGHT = data_provider.INPUT_HEIGHT
+    INPUT_CHANNELS = data_provider.INPUT_CHANNELS
+    NUM_CLASSES = data_provider.NUM_CLASSES
 
     def queue_input_placeholders():
         # TODO: Test with variable BATCH_SIZE
@@ -98,9 +101,7 @@ if __name__ == '__main__':
     
     with tf.Session(graph=my_graph) as sess:
         sess.run(tf.global_variables_initializer())
-        
-        data_provider = UCF101Provider(BATCH_SIZE, True)
-        data_provider.current_batch = 200
+        # data_provider.current_batch = 200
         threads = [EnqueueThread(data_provider, my_graph, sess, NUM_GPUS, EXAMPLES_PER_GPU) for _ in range(NUM_DATA_THREADS)]
         for t in threads:
             t.start()
@@ -110,7 +111,6 @@ if __name__ == '__main__':
             dequeued = sess.run(dequeue_ops)
             print(dequeued[0][2], '---------------------------------------------------------------')
             print('DEQUEUEING took:', time.time() - before)
-            print('Equal', are_equal(data_provider.delivered_batches.pop(0), dequeued, BATCH_SIZE))
             time.sleep(1)
             
         EnqueueThread.coord.request_stop()
