@@ -44,7 +44,7 @@ with tf.Session() as sess:
         saver.restore(sess, CKPT + '/model-{}.ckpt'.format(model_indx))
         print('Loaded model {}'.format(model_indx))
         test_ended = False
-        with open(results_path + '/model-{}-results.txt', 'w') as file:
+        with open(results_path + '/model-{}-results.txt'.format(model_indx), 'w') as file:
             while not test_ended:
                 before = time.time()
                 test_video, video_id, test_ended = data_provider.get_next_test_video()

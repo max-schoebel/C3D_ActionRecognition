@@ -48,7 +48,7 @@ WRITE_TIMELINE = False
 
 data_provider = CharadesProvider(BATCH_SIZE, tov_pretraining=False)
 load_pretrained = False
-pretrain_model_path = './tov_pretrained_model/model-7.ckpt'
+pretrain_model_path = './tov_pretrained_model/model-8.ckpt'
 TEMPORAL_DEPTH = data_provider.TEMPORAL_DEPTH
 INPUT_WIDTH = data_provider.INPUT_WIDTH
 INPUT_HEIGHT = data_provider.INPUT_HEIGHT
@@ -159,7 +159,7 @@ with my_graph.as_default(), tf.device('/cpu:0'):
     
     if load_pretrained:
         vars_to_preload = [v for v in tf.trainable_variables() if not 'out' in v.name]
-        vars_to_manually_load = [v for v in tf.trainable_variables() if 'out' in v.name]
+        # vars_to_manually_load = [v for v in tf.trainable_variables() if 'out' in v.name]
         pretrained_restorer = tf.train.Saver(vars_to_preload)
 #    my_graph.finalize()
 
@@ -169,8 +169,8 @@ def run_training():
     # with tf.Session(graph=my_graph, config=tf.ConfigProto(allow_soft_placement=True)) as sess:
         assert(tf.get_default_graph() == my_graph)
         if load_pretrained:
+            sess.run(tf.global_variables_initializer())
             pretrained_restorer.restore(sess, pretrain_model_path)
-            sess.run([var.initializer for var in vars_to_manually_load])
         else:
             sess.run(tf.global_variables_initializer())
     

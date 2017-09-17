@@ -314,7 +314,7 @@ class CharadesProvider(GenericDataProvider):
         
         if self.current_test_id == len(self.testIDs) -1:
             test_ended = True
-            self.current_test_is = 0
+            self.current_test_id = 0
         else:
             test_ended = False
             self.current_test_id += 1

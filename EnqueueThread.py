@@ -25,7 +25,6 @@ class EnqueueThread(threading.Thread):
     def run(self):
         try:
             while not self.coord.should_stop():
-                before = time.time()
                 data, labels, epoch_ended = self.data_provider.get_next_training_batch(self.lock)
                 print('I am thread', threading.current_thread(), 'Enqueueing took', time.time() - before)
                 feed_dict = {}
@@ -47,7 +46,7 @@ class EnqueueThread(threading.Thread):
                 self.sess.run(self.graph.get_collection('enqueue'), feed_dict=feed_dict)
         except:
             print('Batch abandoned')
-            print(sys.exc_info()[0])
+            print(sys.exc_info())
 
 
 if __name__ == '__main__':
