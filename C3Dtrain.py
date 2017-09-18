@@ -206,7 +206,7 @@ def run_training():
                 break
             print('Filling queues and cooling GPUs')
             for i in range(12):
-                print(i,)
+                print(i*10,'/ 120 s')
                 time.sleep(10)
             while not end_epoch:
                 before = time.time()
