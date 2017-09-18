@@ -39,7 +39,7 @@ os.system(r'cp ./videotools.py {}'.format(srcdir))
 BATCH_SIZE = 2
 NUM_GPUS = 1
 NUM_DATA_THREADS = 6
-GPU_QUEUES_CAPACITY = 18
+GPU_QUEUES_CAPACITY = 60
 assert(BATCH_SIZE % NUM_GPUS == 0)
 EXAMPLES_PER_GPU = int(BATCH_SIZE / NUM_GPUS)
 LEARNING_RATE = 1e-05
@@ -204,6 +204,10 @@ def run_training():
             end_epoch = False
             if os.path.isfile('./terminate'):
                 break
+            print('Filling queues and cooling GPUs')
+            for i in range(12):
+                print(i,)
+                time.sleep(10)
             while not end_epoch:
                 before = time.time()
                 _, loss, merged_summ, step, end_epoch, reg_loss = sess.run(

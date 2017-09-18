@@ -26,7 +26,6 @@ class EnqueueThread(threading.Thread):
         try:
             while not self.coord.should_stop():
                 data, labels, epoch_ended = self.data_provider.get_next_training_batch(self.lock)
-                print('I am thread', threading.current_thread(), 'Enqueueing took', time.time() - before)
                 feed_dict = {}
                 
                 for tower_index in range(self.num_gpus):
