@@ -52,16 +52,17 @@ if __name__ == '__main__':
     ### TEST CODE ###
     from DataProvider import UCF101Provider
     from DataProvider import CharadesProvider
+    from DataProvider import KineticsPretrainProvider
     import numpy as np
     from videotools import are_equal
     import time
-    NUM_GPUS = 2
-    BATCH_SIZE = 40
-    EXAMPLES_PER_GPU = 20
+    NUM_GPUS = 1
+    BATCH_SIZE = 8
+    EXAMPLES_PER_GPU = 4
     GPU_QUEUES_CAPACITY = 16
-    NUM_DATA_THREADS = 6
+    NUM_DATA_THREADS = 2
 
-    data_provider = CharadesProvider(BATCH_SIZE, tov_pretraining=True)
+    data_provider = KineticsPretrainProvider(BATCH_SIZE)
     TEMPORAL_DEPTH = data_provider.TEMPORAL_DEPTH
     INPUT_WIDTH = data_provider.INPUT_WIDTH
     INPUT_HEIGHT = data_provider.INPUT_HEIGHT
@@ -71,7 +72,7 @@ if __name__ == '__main__':
     def queue_input_placeholders():
         # TODO: Test with variable BATCH_SIZE
         input_placeholder = tf.placeholder(
-            tf.float32, [EXAMPLES_PER_GPU, TEMPORAL_DEPTH, INPUT_HEIGHT, INPUT_WIDTH, INPUT_CHANNELS],
+            tf.float32, [EXAMPLES_PER_GPU, 3, TEMPORAL_DEPTH, INPUT_HEIGHT, INPUT_WIDTH, INPUT_CHANNELS],
             name='input_placeholder')
         tf.add_to_collection("placeholders", input_placeholder)
         output_placeholder = tf.placeholder(tf.float32, [EXAMPLES_PER_GPU, NUM_CLASSES], name='output_placeholder')

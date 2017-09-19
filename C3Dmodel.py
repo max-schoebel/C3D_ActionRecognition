@@ -3,6 +3,8 @@ from tensorflow import layers
 
 WEIGHT_DECAY = 1e-04
 INIT_STDDEV = 0.01
+weight_init = tf.truncated_normal_initializer(0, INIT_STDDEV)
+bias_init = tf.constant_initializer(0)
 
 def add_activation_summary(layer):
     # changes needed for multi cpu training!
@@ -23,7 +25,7 @@ def model_variable(name, shape, initializer, wd=None):
     return variable_creation_function
 
 
-def inference(vid_placeholder, batch_size, dropout_rate, is_training, num_classes, collection):
+def inference(vid_placeholder, batch_size, dropout_rate, is_training, num_classes, collection, tensor_to_return='out'):
     # dropout_rate = 1 - keep_rate !!!
     
     def conv3d(x, w, b, names):
@@ -47,7 +49,6 @@ def inference(vid_placeholder, batch_size, dropout_rate, is_training, num_classe
         return pool_out
 
     FULLY1_DIM = 8192
-    weight_init = tf.truncated_normal_initializer(0, INIT_STDDEV)
     # weight_init = tf.contrib.layers.xavier_initializer()
     weight_dict = {
         'wconv1': model_variable('wconv1', [3, 3, 3, 3, 64], weight_init, WEIGHT_DECAY),
@@ -63,7 +64,6 @@ def inference(vid_placeholder, batch_size, dropout_rate, is_training, num_classe
         'wout': model_variable('wout', [4096, num_classes], weight_init, WEIGHT_DECAY)
     }
 
-    bias_init = tf.constant_initializer(0)
     bias_dict = {
         'bconv1': model_variable('bconv1', [64], bias_init),
         'bconv2': model_variable('bconv2', [128], bias_init),
@@ -148,7 +148,7 @@ def inference(vid_placeholder, batch_size, dropout_rate, is_training, num_classe
         # fully1 = tf.Print(fully1, [tf.shape(fully1)], message='fully1', summarize=10)
         # add_activation_summary(fully1)
         fully1 = tf.nn.dropout(fully1, dropout_rate)
-    
+        
     with tf.variable_scope('fully2'):
         fully2 = tf.matmul(fully1, weight_dict['wfully2']()) + bias_dict['bfully2']()
         # fully2 = layers.batch_normalization(fully2, 1, training=is_training, name='bn_fully2')
@@ -156,14 +156,18 @@ def inference(vid_placeholder, batch_size, dropout_rate, is_training, num_classe
         # fully2 = tf.Print(fully2, [tf.shape(fully2)], message='fully2', summarize=10)
         # add_activation_summary(fully2)
         fully2 = tf.nn.dropout(fully2, dropout_rate)
+    
+    if tensor_to_return == 'fully':
+        return fully2
+    elif tensor_to_return == 'out':
+        with tf.variable_scope('out'):
+            out = tf.matmul(fully2, weight_dict['wout']()) + bias_dict['bout']()
+            out = out - tf.expand_dims(tf.reduce_max(out,1),1)
+            # out = tf.Print(out, [tf.shape(out)], message='out', summarize=10)
+            add_activation_summary(out)
+        tf.add_to_collection(collection, out)
+        return out
         
-    with tf.variable_scope('out'):
-        out = tf.matmul(fully2, weight_dict['wout']()) + bias_dict['bout']()
-        out = out - tf.expand_dims(tf.reduce_max(out,1),1)
-        # out = tf.Print(out, [tf.shape(out)], message='out', summarize=10)
-        add_activation_summary(out)
-    tf.add_to_collection(collection, out)
-    return out
     
     
 def loss(network_output, training_labels, collection, scope):

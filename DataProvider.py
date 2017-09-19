@@ -3,6 +3,7 @@ import numpy as np
 import random
 from videotools import open_video, one_hot, enough_motion_present, permute_clip
 import csv
+import os
 
 
 class GenericDataProvider(ABC):
@@ -320,23 +321,145 @@ class CharadesProvider(GenericDataProvider):
             self.current_test_id += 1
         
         return train_video_crop, current_id, test_ended
+
+class KineticsPretrainProvider(GenericDataProvider):
+    def __init__(self, batch_size):
+        self.batch_size = batch_size
+        self.base_dir = './datasets/kinetics'
+        self.video_names = os.listdir(self.base_dir + '/kinetics_video/train')
+        self.num_videos = len(self.video_names)
+        self.model_replica = 3
+        self.current_batch = 0
+        self.NUM_CLASSES = 2  # correct and incorrect temporal order
+        super().__init__(batch_size, False, False, current_split=0)
         
+    def set_training_tuples(self):
+        pass
+    
+    def set_test_tuples(self):
+        pass
+    
+    def get_next_training_batch(self, lock):
+        batch = np.zeros(
+            (self.batch_size, self.model_replica, self.TEMPORAL_DEPTH, self.INPUT_HEIGHT, self.INPUT_WIDTH, self.INPUT_CHANNELS),
+            dtype=np.float32)
+        labels = np.zeros((self.batch_size, 2))
+        
+        lock.acquire()
+        start = self.current_batch * self.batch_size
+        end = start + self.batch_size
+        self.current_batch += 1
+    
+        if end <= self.num_videos:
+            lock.release()
+            for i in range(self.batch_size):
+                vidfile_dict = {
+                    'filename' : self.base_dir + '/kinetics_video/train/' + self.video_names[start+i],
+                    'size' : 120,
+                    'interval' : None,
+                    'presampling_depth' : (self.model_replica+1) * self.TEMPORAL_DEPTH
+                }
+                clip = open_video(**vidfile_dict)
+                # cut out center region of size INPUT_WIDTH * INPUT_HEIGHT
+                video_height = clip.shape[1]
+                video_width = clip.shape[2]
+                y_offset = int(self.INPUT_HEIGHT / 2)
+                x_offset = int(self.INPUT_WIDTH / 2)
+                y_start = int(video_height / 2) - y_offset
+                y_end = int(video_height / 2) + y_offset
+                x_start = int(video_width / 2) - x_offset
+                x_end = int(video_width / 2) + x_offset
+                clip = clip[:,y_start:y_end,x_start:x_end,:]
+                
+                permute = np.random.rand() >= 0.25  # i.e. create negative example (more negatives needed)
+                T = self.TEMPORAL_DEPTH
+                if permute:
+                    # determine whether to include first fragment in middle
+                    # clip contains 4 fragments of length T
+                    insert_first_fragment = np.random.rand() >= 0.5
+                    if insert_first_fragment:
+                        clip[2*T:3*T] = clip[:T]
+                        batch[i] = np.stack(np.split(clip[T:], 3), 0)
+                    else:
+                        clip[T:2*T] = clip[3*T:]
+                        batch[i] = np.stack(np.split(clip[:3*T], 3), 0)
+                else:
+                    batch[i] = np.stack(np.split(clip[:3*T], 3), 0)
+                # play_clip(np.concatenate(batch[:,i],0).astype(np.uint8))
+                labels[i] = one_hot(int(permute), 2)
+            epoch_ended = False
+        else:
+            # pad last returned batch with crops from random videos
+            for i in range(self.batch_size):
+                if start + i < self.num_videos:
+                    indx = start + i
+                else:
+                    indx = np.random.randint(self.num_videos)
+                vidfile_dict = {
+                        'filename' : self.base_dir + '/kinetics_video/train/' + self.video_names[indx],
+                        'size' : 120,
+                        'interval' : None,
+                        'presampling_depth' : (self.model_replica+1) * self.TEMPORAL_DEPTH
+                    }
+                clip = open_video(**vidfile_dict)
+                # cut out center region of size INPUT_WIDTH * INPUT_HEIGHT
+                video_height = clip.shape[1]
+                video_width = clip.shape[2]
+                y_offset = int(self.INPUT_HEIGHT / 2)
+                x_offset = int(self.INPUT_WIDTH / 2)
+                y_start = int(video_height / 2) - y_offset
+                y_end = int(video_height / 2) + y_offset
+                x_start = int(video_width / 2) - x_offset
+                x_end = int(video_width / 2) + x_offset
+                clip = clip[:,y_start:y_end,x_start:x_end,:]
+                
+                permute = np.random.rand() >= 0.25  # i.e. create negative example (more negatives needed)
+                T = self.TEMPORAL_DEPTH
+                if permute:
+                    # determine whether to include first fragment in middle
+                    # clip contains 4 fragments of length T
+                    insert_first_fragment = np.random.rand() >= 0.5
+                    if insert_first_fragment:
+                        clip[2*T:3*T] = clip[:T]
+                        batch[i] = np.stack(np.split(clip[T:], 3), 0)
+                    else:
+                        clip[T:2*T] = clip[3*T:]
+                        batch[i] = np.stack(np.split(clip[:3*T], 3), 0)
+                else:
+                    batch[i] = np.stack(np.split(clip[:3*T], 3), 0)
+                # play_clip(np.concatenate(batch[i],0).astype(np.uint8))
+                labels[i] = one_hot(int(permute), 2)
+            
+            random.shuffle(self.video_names)
+            epoch_ended = True
+            self.current_batch = 0
+            lock.release()
+        
+        if self.debug_mode:
+            self.delivered_batches.append([batch, labels, epoch_ended])
+        return batch, labels, epoch_ended
+        pass
+    
         
 if __name__ == "__main__":
     import time
     import threading
     from videotools import play_clip
     # prov = UCF101Provider()
-    prov = CharadesProvider()
+    prov = KineticsPretrainProvider(40)
+    lock = threading.Lock()
+    before = time.time()
+    batch = prov.get_next_training_batch(lock)
+    print('Took', time.time() - before)
     # prov.current_batch = 1240
     # prov.current_test_video = 2647
-    prov.current_test_video = 9750
-    lock = threading.Lock()
-    for i in range(10):
-        before = time.time()
-        batch = prov.get_next_test_video_clips(offset=16)
-        print(np.shape(batch[0]))
-        print(i, 'Batch ready! Took', time.time() - before)
+    # prov.current_test_video = 9750
+    # lock = threading.Lock()
+    # for i in range(10):
+    #     before = time.time()
+    #     batch = prov.get_next_test_video_clips(offset=16)
+    #     print(np.shape(batch[0]))
+    #     print(i, 'Batch ready! Took', time.time() - before)
     
     # prov.current_batch = 200
     # for i in range(300):

@@ -40,7 +40,7 @@ def open_video(filename, size, interval=None, presampling_depth=None):
         else:
             start_frame = 0
             end_frame = int(video.get(cv2.CAP_PROP_FRAME_COUNT))
-        if presampling_depth is not None:
+        if presampling_depth is not None and end_frame > presampling_depth:
             # presample between previously determined interval (start_frame, end_frame),
             # to speed up reading of the video. Only reads what is actually needed.
             start_frame = random.randint(start_frame, end_frame - presampling_depth)
@@ -85,6 +85,9 @@ def open_video(filename, size, interval=None, presampling_depth=None):
             print("IT HAPPENED!!!")
     
     video.release()
+    if frame_matrix.shape[0] < presampling_depth:
+        frame_matrix = np.repeat(frame_matrix, 2, axis=0)[:presampling_depth]
+        pass
     return frame_matrix
 
 
