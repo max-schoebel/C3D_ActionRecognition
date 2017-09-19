@@ -1,6 +1,7 @@
 import threading
 import tensorflow as tf
 import sys
+import traceback
 
 class EnqueueThread(threading.Thread):
     """
@@ -45,7 +46,7 @@ class EnqueueThread(threading.Thread):
                 self.sess.run(self.graph.get_collection('enqueue'), feed_dict=feed_dict)
         except:
             print('Batch abandoned')
-            print(sys.exc_info())
+            traceback.print_exception(*sys.exc_info())
 
 
 if __name__ == '__main__':
@@ -57,10 +58,10 @@ if __name__ == '__main__':
     from videotools import are_equal
     import time
     NUM_GPUS = 1
-    BATCH_SIZE = 8
-    EXAMPLES_PER_GPU = 4
-    GPU_QUEUES_CAPACITY = 16
-    NUM_DATA_THREADS = 2
+    BATCH_SIZE = 30
+    EXAMPLES_PER_GPU = int(BATCH_SIZE / NUM_GPUS)
+    GPU_QUEUES_CAPACITY = 30
+    NUM_DATA_THREADS = 7
 
     data_provider = KineticsPretrainProvider(BATCH_SIZE)
     TEMPORAL_DEPTH = data_provider.TEMPORAL_DEPTH
@@ -105,12 +106,14 @@ if __name__ == '__main__':
         for t in threads:
             t.start()
         
-        for i in range(60):
+        epoch_ended = False
+        while not epoch_ended:
             before = time.time()
             dequeued = sess.run(dequeue_ops)
-            print(dequeued[0][2], '---------------------------------------------------------------')
+            epoch_ended = dequeued[0][2]
             print('DEQUEUEING took:', time.time() - before)
-            time.sleep(1)
+            print('current batch:', data_provider.current_batch)
+            print('Total number of videos:', data_provider.num_videos)
             
         EnqueueThread.coord.request_stop()
         sess.run(my_graph.get_collection('close_queue'))
