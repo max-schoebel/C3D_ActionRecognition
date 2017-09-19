@@ -18,6 +18,8 @@ def open_video(filename, size, interval=None, presampling_depth=None):
     elif type(size) == int:
         video_width = int(video.get(cv2.CAP_PROP_FRAME_WIDTH))
         video_height = int(video.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        if video_width == 0 or video_height == 0:
+            print(filename)
         resize_factor = size / min(video_width, video_height)
         desired_width = int(np.round(video_width * resize_factor))
         desired_height = int(np.round(video_height * resize_factor))
