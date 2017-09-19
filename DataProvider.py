@@ -359,7 +359,10 @@ class KineticsPretrainProvider(GenericDataProvider):
                     'interval' : None,
                     'presampling_depth' : (self.model_replica+1) * self.TEMPORAL_DEPTH
                 }
+                # print(vidfile_dict['filename'])
                 clip = open_video(**vidfile_dict)
+                assert(clip.shape[0] == 4 * 16)
+                assert(clip.any())
                 # cut out center region of size INPUT_WIDTH * INPUT_HEIGHT
                 video_height = clip.shape[1]
                 video_width = clip.shape[2]
@@ -448,9 +451,14 @@ if __name__ == "__main__":
     # prov = UCF101Provider()
     prov = KineticsPretrainProvider(40)
     lock = threading.Lock()
-    before = time.time()
-    batch = prov.get_next_training_batch(lock)
-    print('Took', time.time() - before)
+    epoch_ended = False
+    prov.current_batch = 28
+    while not epoch_ended:
+        before = time.time()
+        batch = prov.get_next_training_batch(lock)
+        print('Took', time.time() - before)
+        print(np.shape(batch[0]))
+        epoch_ended = batch[2]
     # prov.current_batch = 1240
     # prov.current_test_video = 2647
     # prov.current_test_video = 9750

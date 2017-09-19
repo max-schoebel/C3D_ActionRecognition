@@ -5,6 +5,7 @@ import time
 import matplotlib.pyplot as plt
 import itertools
 import random
+import math
 
 
 def open_video(filename, size, interval=None, presampling_depth=None):
@@ -85,9 +86,11 @@ def open_video(filename, size, interval=None, presampling_depth=None):
             print("IT HAPPENED!!!")
     
     video.release()
-    if frame_matrix.shape[0] < presampling_depth:
-        frame_matrix = np.repeat(frame_matrix, 2, axis=0)[:presampling_depth]
-        pass
+    if frame_matrix.shape[0] < presampling_depth and frame_matrix.shape[0] > 0:
+        stretch_factor = math.ceil(presampling_depth / frame_matrix.shape[0])
+        frame_matrix = np.repeat(frame_matrix, stretch_factor, axis=0)[:presampling_depth]
+    elif frame_matrix.shape[0] == 0:
+        print('[open_video] could not open video, got 0 Frames', filename)
     return frame_matrix
 
 
