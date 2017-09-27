@@ -137,9 +137,10 @@ with my_graph.as_default(), tf.device('/cpu:0'):
 
                 data, labels, epoch_ended = gpu_queue.dequeue()
                 
-                network_output = C3Dmodel.inference(
-                    data, EXAMPLES_PER_GPU, dropout_placeholder, is_training_placeholder, NUM_CLASSES,
-                    collection='network_output')
+                with tf.variable_scope('model_replicas'):
+                    network_output = C3Dmodel.inference(
+                        data, EXAMPLES_PER_GPU, dropout_placeholder, is_training_placeholder, NUM_CLASSES,
+                        collection='network_output')
                 xentropy_loss, regularization_loss = C3Dmodel.loss(network_output, labels, collection='xentropy_loss', scope=scope)
                 
                 # train_step = C3Dmodel.train(xentropy_loss, 1e-04, global_step, collection='train_step')
@@ -161,7 +162,6 @@ with my_graph.as_default(), tf.device('/cpu:0'):
         vars_to_preload = [v for v in tf.trainable_variables() if not 'out' in v.name]
         # vars_to_manually_load = [v for v in tf.trainable_variables() if 'out' in v.name]
         pretrained_restorer = tf.train.Saver(vars_to_preload)
-#    my_graph.finalize()
 
 
 def run_training():
@@ -173,6 +173,7 @@ def run_training():
             pretrained_restorer.restore(sess, pretrain_model_path)
         else:
             sess.run(tf.global_variables_initializer())
+        my_graph.finalize()
     
         starttime = time.time()
 

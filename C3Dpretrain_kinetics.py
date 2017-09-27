@@ -36,10 +36,10 @@ os.system(r'cp ./DataProvider.py {}'.format(srcdir))
 os.system(r'cp ./videotools.py {}'.format(srcdir))
 os.system(r'cp ./EnqueueThread.py {}'.format(srcdir))
 
-BATCH_SIZE = 2
+BATCH_SIZE = 5
 NUM_GPUS = 1
-NUM_DATA_THREADS = 7
-GPU_QUEUES_CAPACITY = 60
+NUM_DATA_THREADS = 4
+GPU_QUEUES_CAPACITY = 10
 assert(BATCH_SIZE % NUM_GPUS == 0)
 EXAMPLES_PER_GPU = int(BATCH_SIZE / NUM_GPUS)
 LEARNING_RATE = 1e-05
@@ -206,7 +206,7 @@ def run_training():
         print('Tensorflow version:', tf.__version__)
         print('------------------------------------------------------------------------------')
         
-        feed_dict = {dropout_placeholder : 0.5, is_training_placeholder : False}
+        feed_dict = {dropout_placeholder : 0.5, is_training_placeholder : True}
         
         for epoch in range(EPOCHS):
             end_epoch = False

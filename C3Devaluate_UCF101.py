@@ -28,7 +28,8 @@ input_placeholder = tf.placeholder(
 onehot_label_placeholder = tf.placeholder(
     tf.float32, [NUM_CLASSES]
 )
-output = C3Dmodel.inference(input_placeholder, -1, 1, False, NUM_CLASSES, collection='network_output')
+with tf.variable_scope('model_replicas'):
+    output = C3Dmodel.inference(input_placeholder, -1, 1, False, NUM_CLASSES, collection='network_output')
 # softmax_output = tf.nn.softmax(output)
 saver = tf.train.Saver()
 

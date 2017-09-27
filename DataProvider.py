@@ -361,8 +361,6 @@ class KineticsPretrainProvider(GenericDataProvider):
                 }
                 # print(vidfile_dict['filename'])
                 clip = open_video(**vidfile_dict)
-                assert(clip.shape[0] == 4 * 16)
-                assert(clip.any())
                 # cut out center region of size INPUT_WIDTH * INPUT_HEIGHT
                 video_height = clip.shape[1]
                 video_width = clip.shape[2]
