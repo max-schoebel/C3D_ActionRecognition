@@ -57,7 +57,7 @@ with tf.Session() as sess:
                     clip_list = []
                     for start in tuple:
                         clip_list.append(test_video[start:start+TEMPORAL_DEPTH])
-                    input_batch = np.concatenate(clip_list,0)
+                    input_batch = np.stack(clip_list,0)
                     feed_dict = {input_placeholder : input_batch}
                     out = sess.run(output, feed_dict=feed_dict)
                     outputs.append(out)

@@ -6,7 +6,7 @@ import numpy as np
 import math
 import os
 
-data_provider = CharadesProvider()
+data_provider = UCF101Provider()
 #
 # data_provider.current_test_video = 2648
 #
