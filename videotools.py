@@ -88,7 +88,7 @@ def open_video(filename, size, interval=None, presampling_depth=None):
             print("IT HAPPENED!!!")
     
     video.release()
-    if frame_matrix.shape[0] < presampling_depth and frame_matrix.shape[0] > 0:
+    if presampling_depth is not None and frame_matrix.shape[0] < presampling_depth and frame_matrix.shape[0] > 0:
         stretch_factor = math.ceil(presampling_depth / frame_matrix.shape[0])
         frame_matrix = np.repeat(frame_matrix, stretch_factor, axis=0)[:presampling_depth]
     elif frame_matrix.shape[0] == 0:
