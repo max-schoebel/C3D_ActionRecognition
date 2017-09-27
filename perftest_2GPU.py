@@ -13,32 +13,15 @@ from DataProvider import CharadesProvider
 from EnqueueThread import EnqueueThread
 import sys
 
-from datetime import datetime
-
-now = datetime.utcnow().strftime("%Y%m%d%H%M%S")
-# root_logdir = "tf_logs"
-# root_ckptdir = "tf_checkpoints"
-# logdir = "{}/run-{}/".format(root_logdir, now)
-# srcdir = logdir + 'src/'
-# ckptdir = "{}/run-{}/".format(root_ckptdir, now)
-
-# Save model and training sourcecode to later look up hyperparameters
-# if not os.path.exists(srcdir):
-#     os.makedirs(srcdir)
-# os.system(r'cp ./C3Dtrain.py {}'.format(srcdir))
-# os.system(r'cp ./C3Dmodel.py {}'.format(srcdir))
-# os.system(r'cp ./DataProvider.py {}'.format(srcdir))
-# os.system(r'cp ./videotools.py {}'.format(srcdir))
-
-BATCH_SIZE = 40
-NUM_GPUS = 1
-NUM_DATA_THREADS = 5
-GPU_QUEUES_CAPACITY = 20
+BATCH_SIZE = 10
+NUM_GPUS = 2
+NUM_DATA_THREADS = 4
+GPU_QUEUES_CAPACITY = 5
 assert(BATCH_SIZE % NUM_GPUS == 0)
 EXAMPLES_PER_GPU = int(BATCH_SIZE / NUM_GPUS)
 LEARNING_RATE = 1e-05
 
-result_filename = './pipeline_performance/Perftest_IPCPU.npy'
+result_filename = './pipeline_performance/2gpu.npy'
 
 data_provider = UCF101Provider(BATCH_SIZE, tov_pretraining=False)
 TEMPORAL_DEPTH = data_provider.TEMPORAL_DEPTH
@@ -99,7 +82,7 @@ def average_gradients(tower_grads):
 
 # with tf.Graph().as_default():
 my_graph = tf.Graph()
-with my_graph.as_default(), tf.device('/cpu:0'):
+with my_graph.as_default():
     
     global_step = tf.Variable(0, name='global_step', trainable=False)
     optimizer = tf.train.AdamOptimizer(LEARNING_RATE)
@@ -109,42 +92,43 @@ with my_graph.as_default(), tf.device('/cpu:0'):
     is_training_placeholder = tf.placeholder(tf.bool, name='is_training_placeholder')
     tf.add_to_collection("dropout", dropout_placeholder)
     tf.add_to_collection("training", is_training_placeholder)
-
-    with tf.variable_scope(tf.get_variable_scope()) as scope:
-        input_placeholder, output_placeholder, epoch_ended_placeholder = queue_input_placeholders()
-        gpu_queue = tf.FIFOQueue(
-            GPU_QUEUES_CAPACITY, [tf.float32, tf.float32, tf.bool], name='InputQueue{}'.format(i))
     
-        enqueue_op = gpu_queue.enqueue(
-            [input_placeholder, output_placeholder, epoch_ended_placeholder])
-        tf.add_to_collection('enqueue', enqueue_op)
-        close_op = gpu_queue.close(cancel_pending_enqueues=True)
-        tf.add_to_collection('close_queue', close_op)
-
-        data, labels, epoch_ended = gpu_queue.dequeue()
-        
-        network_output = C3Dmodel.inference(
-            data, EXAMPLES_PER_GPU, dropout_placeholder, is_training_placeholder, NUM_CLASSES,
-            collection='network_output')
-        xentropy_loss, regularization_loss = C3Dmodel.loss(network_output, labels, collection='xentropy_loss', scope=scope)
-        
-        # train_step = C3Dmodel.train(xentropy_loss, 1e-04, global_step, collection='train_step')
-    train_step = optimizer.minimize(xentropy_loss)
+    tower_gradients = []
+    with tf.variable_scope(tf.get_variable_scope()):
+        for i in range(NUM_GPUS):
+            with tf.device('/gpu:%d'%i), tf.name_scope('Tower%d'%i) as scope:
+                
+                with tf.device('/cpu:0'):
+                    input_placeholder, output_placeholder, epoch_ended_placeholder = queue_input_placeholders()
+                
+                with tf.variable_scope('model_replicas'):
+                    network_output = C3Dmodel.inference(
+                        input_placeholder, EXAMPLES_PER_GPU, dropout_placeholder, is_training_placeholder, NUM_CLASSES,
+                        collection='network_output')
+                xentropy_loss, regularization_loss = C3Dmodel.loss(network_output, output_placeholder, collection='xentropy_loss', scope=scope)
+                
+                # train_step = C3Dmodel.train(xentropy_loss, 1e-04, global_step, collection='train_step')
+                grads = optimizer.compute_gradients(xentropy_loss)
+                tower_gradients.append(grads)
+                tf.get_variable_scope().reuse_variables()
+    
+    grads = average_gradients(tower_gradients)
+    train_step = optimizer.apply_gradients(grads, global_step=global_step)
 
 def run_training():
-    with tf.Session(graph=my_graph, config=tf.ConfigProto(log_device_placement=True, allow_soft_placement=False)) as sess:
-    # with tf.Session(graph=my_graph, config=tf.ConfigProto(allow_soft_placement=True)) as sess:
+    with tf.Session(graph=my_graph, config=tf.ConfigProto(log_device_placement=True, allow_soft_placement=True)) as sess:
+        # with tf.Session(graph=my_graph, config=tf.ConfigProto(allow_soft_placement=True)) as sess:
         assert(tf.get_default_graph() == my_graph)
         sess.run(tf.global_variables_initializer())
         my_graph.finalize()
-    
+        
         starttime = time.time()
-
+        
         enqueue_threads = [EnqueueThread(data_provider, my_graph, sess, NUM_GPUS, EXAMPLES_PER_GPU)
-            for _ in range(NUM_DATA_THREADS)]
+                           for _ in range(NUM_DATA_THREADS)]
         for t in enqueue_threads:
             t.start()
-    
+        
         options = None
         run_metadata = None
         
@@ -153,18 +137,28 @@ def run_training():
         print('Tensorflow version:', tf.__version__)
         print('------------------------------------------------------------------------------')
         
-        feed_dict = {dropout_placeholder : 0.5, is_training_placeholder : False}
-    
-        end_epoch = False
-        print('Filling queues and cooling GPUs')
-        for i in range(6):
-            print(i*10,'/ 60 s')
-            time.sleep(10)
+        lock = threading.Lock()
         times = np.zeros(100)
         for i in range(100):
             before = time.time()
-            _, loss, step, end_epoch, reg_loss = sess.run(
-                [train_step, xentropy_loss, global_step, epoch_ended, regularization_loss],
+            data, labels, epoch_ended = data_provider.get_next_training_batch(lock)
+            feed_dict = {dropout_placeholder : 0.5, is_training_placeholder : False}
+            
+            for tower_index in range(NUM_GPUS):
+                start = tower_index * EXAMPLES_PER_GPU
+                end = start + EXAMPLES_PER_GPU
+    
+                data_tensor = my_graph.get_tensor_by_name('Tower%d/input_placeholder:0'%tower_index)
+                feed_dict[data_tensor] = data[start:end]
+    
+                label_tensor = my_graph.get_tensor_by_name('Tower%d/output_placeholder:0'%tower_index)
+                feed_dict[label_tensor] = labels[start:end]
+    
+                epoch_ended_tensor = my_graph.get_tensor_by_name('Tower%d/epoch_ended_placeholder:0'%tower_index)
+                feed_dict[epoch_ended_tensor] = epoch_ended
+                
+            _, loss, step, reg_loss = sess.run(
+                [train_step, xentropy_loss, global_step, regularization_loss],
                 feed_dict=feed_dict,
                 # TIMELINE TEST
                 options=options,
@@ -176,18 +170,8 @@ def run_training():
             print(" - Clips/second:\t{}".format(BATCH_SIZE/update_duration))
             print(" - Resulting training loss:\t{}  (regularization {})".format(loss, reg_loss))
             times[i] = update_duration
-                
-        print("------- EPOCH ENDED !!!!! -----------")
         np.save(result_filename, times)
-            
-        EnqueueThread.coord.request_stop()
-        sess.run(my_graph.get_collection('close_queue'))
-        EnqueueThread.coord.join(enqueue_threads)
         
-        
-        # before = time.time()
-        # output = sess.run(network_output, feed_dict=train_dict)
-        # print("Forward pass took:{}".format(time.time() - before))
 
 if __name__ == '__main__':
     run_training()
